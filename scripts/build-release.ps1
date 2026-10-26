@@ -40,7 +40,8 @@ function Resolve-Makensis {
   $candidates = @(
     "${env:ProgramFiles(x86)}\NSIS\makensis.exe",
     "${env:ProgramFiles}\NSIS\makensis.exe",
-    "C:\ProgramData\chocolatey\bin\makensis.exe"
+    "C:\ProgramData\chocolatey\bin\makensis.exe",
+    (Join-Path $Root ".generated\nsis\nsis-3.11\makensis.exe")
   )
   foreach ($candidate in $candidates) {
     if ($candidate -and (Test-Path $candidate)) {

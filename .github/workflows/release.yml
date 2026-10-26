@@ -1,0 +1,130 @@
+name: Release Packaging
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (leave empty to read from package.json)"
+        required: false
+        default: ""
+      publish_release:
+        description: "Publish assets to GitHub Releases"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  package-windows:
+    name: Build & Package Windows x64 Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "scripts/requirements-native.txt"
+
+      - name: Resolve Release Version
+        id: meta
+        shell: pwsh
+        run: |
+          $pkg = Get-Content package.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          $ver = "${{ github.event.inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($ver)) {
+            if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}".StartsWith("v")) {
+              $ver = "${{ github.ref_name }}".TrimStart("v", "V")
+            } else {
+              $ver = [string]$pkg.version
+            }
+          } else {
+            $ver = $ver.TrimStart("v", "V")
+          }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "tag=v$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Resolved version: $ver (tag: v$ver)"
+
+      - name: Ensure NSIS is installed
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
+          }
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Python native build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r scripts/requirements-native.txt
+
+      - name: Run JS & Python test suites
+        run: |
+          npm test
+          python tests/test-jianying-engine.py
+
+      - name: Build renderer & watermarker bundles
+        run: npm run build
+
+      - name: Build native helpers (PeriodKeeper, JianyingEngine, Watermarker)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1 -Python python
+
+      - name: Package Electron application
+        run: npm run package
+
+      - name: Build standardized release assets (Setup.exe, Full-Update.zip, SHA256SUMS.txt)
+        shell: pwsh
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version "${{ steps.meta.outputs.version }}"
+
+      - name: Upload standardized release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64
+          path: artifacts/release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name != 'workflow_dispatch' || inputs.publish_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: XM Editing Studio ${{ steps.meta.outputs.tag }}
+          body_path: CHANGELOG-1.3.0.md
+          draft: false
+          prerelease: false
+          overwrite: true
+          files: |
+            artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64-Setup.exe
+            artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Full-Update.zip
+            artifacts/release/CHANGELOG-*.md
+            artifacts/release/Installation-Guide-${{ steps.meta.outputs.version }}.txt
+            artifacts/release/Update-Guide-${{ steps.meta.outputs.version }}.txt
+            artifacts/release/VERIFICATION-${{ steps.meta.outputs.version }}.md
+            artifacts/release/SHA256SUMS.txt
