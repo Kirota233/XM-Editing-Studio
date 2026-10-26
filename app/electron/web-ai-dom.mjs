@@ -37,10 +37,11 @@ const page = String.raw`(input => {
     }
     return { state: 'enter' };
   }
-  const nodes = [...document.querySelectorAll('pre,code,[class*="markdown"],[data-message-author-role="assistant"],[data-testid*="message_text"]')];
-  const texts = [...new Set(nodes.filter(visible).map(node => node.innerText || '').filter(text => text.includes(input.token) && text.length <= 200000 && !text.includes(input.prompt)))].slice(-20);
-  const busy = [...document.querySelectorAll('button,[role="button"]')].filter(visible).some(node => /^(停止|停止生成|停止回答|stop|stop generating|stop response)$/i.test((node.getAttribute('aria-label') || node.getAttribute('title') || node.innerText || '').trim()));
-  return { texts, busy };
+  const nodes = [...document.querySelectorAll('pre,code,[class*="markdown"],[data-message-author-role="assistant"],[data-testid*="message_text"],[class*="ds-markdown"],[class*="message-content"],article')];
+  const texts = [...new Set(nodes.filter(node => visible(node) && !node.closest?.('[class*="think"],[data-testid*="think"]')).map(node => node.innerText || node.textContent || '').filter(text => text.includes(input.token) && text.length <= 200000 && !text.includes(input.prompt) && !text.includes('这里放入上面要求的完整结果对象')))].slice(-20);
+  const busyButton = [...document.querySelectorAll('button,[role="button"]')].filter(visible).some(node => /^(停止|停止生成|停止回答|停止思考|思考中|正在思考|stop|stop generating|stop response)$/i.test((node.getAttribute('aria-label') || node.getAttribute('title') || node.innerText || '').trim()));
+  const busyStream = [...document.querySelectorAll('[data-streaming="true"],[class*="streaming"],[class*="thinking-status"]')].some(visible);
+  return { texts, busy: busyButton || busyStream };
 })`;
 
 export function webAIPageScript(input) { return `${page}(${JSON.stringify(input)})`; }

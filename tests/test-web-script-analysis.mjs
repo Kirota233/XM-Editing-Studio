@@ -158,6 +158,10 @@ test('DeepSeek task marker inside result is accepted without accepting a differe
   assert.equal(webTaskResult(JSON.stringify({ result }), 'current-token'), null);
   assert.equal(webTaskResult(JSON.stringify({ result }), 'current-token', true), JSON.stringify(result));
   assert.equal(webTaskResult(JSON.stringify({ ...result, xmTaskId: 'current-token' }), 'current-token'), JSON.stringify(result));
+  assert.equal(webTaskResult('思考：先构造 {"xmTaskId" 未闭合大括号\n```json\n' + JSON.stringify(nested) + '\n```', 'current-token'), JSON.stringify(result));
+  assert.equal(webTaskResult(JSON.stringify({ segments: [{ ...result.segments[0], xmTaskId: 'current-token' }] }), 'current-token'), JSON.stringify(result));
+  assert.equal(webTaskResult(JSON.stringify({ xmTaskId: 'current-token', result: result.segments }), 'current-token'), JSON.stringify(result));
+  assert.equal(webTaskResult('{"xmTaskId":"current-token","result":{"segments":[{"title":"转折","startLine":1,"endLine":204,"summary":"情绪变化","keywords":["悬疑",],},],}}', 'current-token'), JSON.stringify(result));
   const prompt = webTaskPrompt([{ content: '只返回分段方案。' }], 'current-token');
   assert.match(prompt, /"xmTaskId":"current-token","result":/);
   assert.match(prompt, /两个并列字段/);

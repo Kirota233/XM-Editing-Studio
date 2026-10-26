@@ -54,6 +54,7 @@ export function createWebAIHost({ View, getWindow, shell }) {
       if (input.command === 'send' && result.state === 'enter') {
         contents.focus();
         contents.sendInputEvent({ type: 'keyDown', keyCode: 'Enter' });
+        contents.sendInputEvent({ type: 'char', keyCode: '\r' });
         contents.sendInputEvent({ type: 'keyUp', keyCode: 'Enter' });
         return { state: 'sent' };
       }

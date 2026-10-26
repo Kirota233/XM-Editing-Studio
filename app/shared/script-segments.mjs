@@ -11,14 +11,18 @@ export function segmentMessages(input, mode) {
   return [{ role: 'system', content: '你是短剧分段配乐策划。' + common + scoreRule }, { role: 'user', content: JSON.stringify({ originalScript: input.script, numberedScript: input.script.split('\n').map((text, at) => ({ line: at + 1, text })), musicRequirements: input.hint, customKeywords: input.customKeywords || [], maxSegments: input.segmentCount }) }];
 }
 export function parseSegments(text, input, mode) {
-  const data = json(text), totalLines = input.script.split('\n').length;
+  const data = json(text), lines = input.script.split('\n'), totalLines = lines.length;
   if (!Array.isArray(data?.segments) || data.segments.length < 2 || data.segments.length > input.segmentCount) fail(`Gemini 需返回 2–${input.segmentCount} 个情节，请补充足够剧情后重试。`);
   let next = 1;
   const segments = data.segments.map((item, at) => {
-    if (!item || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 40 || !Number.isInteger(item.startLine) || !Number.isInteger(item.endLine) || item.startLine !== next || item.endLine < next || item.endLine > totalLines) fail('Gemini 返回的情节行号有遗漏、重叠或超出原文，请重新分析。');
-    const analysis = parseKeywords(JSON.stringify(item)); next = item.endLine + 1;
-    return { id: `segment-${at + 1}`, title: item.title.trim(), startLine: item.startLine, endLine: item.endLine, ...analysis, ...(mode === 'suno' ? { score: parseScoreResponse(JSON.stringify(item.score), input.durationSeconds) } : {}) };
+    const startLine = typeof item?.startLine === 'string' && /^\d+$/.test(item.startLine.trim()) ? Number(item.startLine.trim()) : item?.startLine;
+    const endLine = typeof item?.endLine === 'string' && /^\d+$/.test(item.endLine.trim()) ? Number(item.endLine.trim()) : item?.endLine;
+    while (next < startLine && next <= totalLines && !lines[next - 1].trim()) next++;
+    if (!item || typeof item.title !== 'string' || !item.title.trim() || item.title.length > 40 || !Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine !== next || endLine < next || endLine > totalLines) fail('Gemini 返回的情节行号有遗漏、重叠或超出原文，请重新分析。');
+    const analysis = parseKeywords(JSON.stringify(item)); next = endLine + 1;
+    return { id: `segment-${at + 1}`, title: item.title.trim(), startLine, endLine, ...analysis, ...(mode === 'suno' ? { score: parseScoreResponse(JSON.stringify(item.score), input.durationSeconds) } : {}) };
   });
+  while (next <= totalLines && !lines[next - 1].trim()) next++;
   if (next !== totalLines + 1) fail('Gemini 分段未覆盖完整剧本，请重新分析。');
   return segments;
 }
