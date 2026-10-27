@@ -1710,6 +1710,27 @@
   opacity: 0.45;
   font-size: 10px;
 }
+.bos-credits-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.bos-credits-contribute {
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border, #252b2c);
+  background: color-mix(in srgb, var(--ui-input, #0c0f10) 85%, transparent);
+  color: var(--ui-text, #f3f5f2);
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.bos-credits-contribute:hover {
+  border-color: var(--ui-accent, #c5f54f);
+  color: var(--ui-accent, #c5f54f);
+}
 .bos-credits-toggle {
   font: inherit;
   font-size: 10px;
@@ -1785,4 +1806,84 @@
   font-size: 10px;
   line-height: 1.35;
   color: var(--ui-muted, #a1a8a5);
+}
+
+/* =========================================================================
+   Unified Page Header & Main Content Design Language Across All Sidebar Tabs
+   ========================================================================= */
+.main-content,
+.music-open .main-content,
+.webai-open .main-content,
+.chat-page-content {
+  width: min(100%, 1260px) !important;
+  margin: 0 auto !important;
+  padding: 28px 32px 40px !important;
+}
+.page-header,
+.music-open .page-header,
+.webai-open .page-header,
+.chat-page-content > .page-header {
+  margin: 0 0 22px 0 !important;
+  padding: 0 !important;
+}
+.page-header .eyebrow,
+.music-open .page-header .eyebrow,
+.webai-open .page-header .eyebrow {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.14em !important;
+  line-height: 1.4 !important;
+  margin: 0 !important;
+}
+.page-header h1,
+.music-open .page-header h1,
+.webai-open .page-header h1,
+.chat-page-content > .page-header h1 {
+  font-size: 28px !important;
+  line-height: 1.25 !important;
+  font-weight: 750 !important;
+  letter-spacing: -0.02em !important;
+  margin: 8px 0 8px 0 !important;
+}
+.page-header .page-description,
+.music-open .page-description,
+.webai-open .page-description {
+  font-size: 13px !important;
+  line-height: 1.65 !important;
+  margin: 0 !important;
+  max-width: 820px !important;
+}
+.music-open .sidebar {
+  padding-top: 52px !important;
+}
+.music-open .brand-name {
+  font-size: clamp(17px, 1.6vw, 23px) !important;
+}
+.music-open .brand-kicker {
+  font-size: 10.5px !important;
+}
+
+/* 4-Stage Bar for Jianying Automation + Sample Watermark */
+.bos-top-stage-bar.bos-top-stage-bar-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+@media (max-width: 1120px) {
+  .bos-top-stage-bar.bos-top-stage-bar-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .bos-top-stage-bar.bos-top-stage-bar-4 {
+    grid-template-columns: 1fr;
+  }
+}
+.bos-jy-overview {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: var(--ui-control, 12px);
+  border: 1px solid var(--ui-border, #252b2c);
+  background: color-mix(in srgb, var(--ui-surface, #111415) 72%, transparent);
+}
+.bos-jy-panels > .bos-jy-panel {
+  grid-column: 1 / -1 !important;
 }

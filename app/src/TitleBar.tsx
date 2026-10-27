@@ -12,8 +12,8 @@ export interface UpdaterState {
 
 const DEFAULT_STATE: UpdaterState = {
   status: 'idle',
-  currentVersion: '1.5.0',
-  latestVersion: '1.5.0',
+  currentVersion: '1.5.1',
+  latestVersion: '1.5.1',
   hasUpdate: false,
   progress: 0,
 };
@@ -32,8 +32,13 @@ export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } 
     });
     const offNav = api?.onTrayNavigate?.((target: string) => {
       if (!alive || !target) return;
-      if (target === 'script') {
+      if (target === 'script' || target === 'period') {
         onNavigate?.('workspace');
+      } else if (target === 'watermark') {
+        onNavigate?.('jianying');
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('xm-jianying-stage', { detail: 'watermark' }));
+        }
       } else {
         onNavigate?.(target);
       }

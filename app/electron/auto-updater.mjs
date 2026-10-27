@@ -22,7 +22,7 @@ export function compareSemver(a, b) {
 }
 
 export function createAutoUpdater({
-  currentVersion = '1.5.0',
+  currentVersion = '1.5.1',
   repo = 'Kirota233/XM-Editing-Studio',
   downloadDirectory,
   fetcher = globalThis.fetch,
@@ -98,7 +98,9 @@ export function createAutoUpdater({
       const data = await response.json();
       const latestVersion = String(data.tag_name || data.name || currentVersion).trim().replace(/^[vV]/, '');
       const assets = Array.isArray(data.assets) ? data.assets : [];
-      const setupAsset = assets.find(a => typeof a?.name === 'string' && /Setup\.exe$/i.test(a.name));
+      // Prefer the < 2MB lightweight Update.exe for in-app updates, falling back to full Setup.exe
+      const updateAsset = assets.find(a => typeof a?.name === 'string' && /Update\.exe$/i.test(a.name));
+      const setupAsset = updateAsset || assets.find(a => typeof a?.name === 'string' && /Setup\.exe$/i.test(a.name));
       const shaAsset = assets.find(a => typeof a?.name === 'string' && /^SHA256SUMS\.txt$/i.test(a.name));
 
       let expectedSha256 = '';
@@ -212,7 +214,8 @@ export function createAutoUpdater({
       await download();
     }
     if (!state.installerPath) throw new Error('更新安装包尚未就绪。');
-    spawnInstaller(state.installerPath, []);
+    const isLiteUpdate = /Update\.exe$/i.test(state.installerPath);
+    spawnInstaller(state.installerPath, isLiteUpdate ? ['/S'] : []);
     setTimeout(() => onQuit(), 150);
     return { ok: true, installerPath: state.installerPath };
   }

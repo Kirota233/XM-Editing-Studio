@@ -5,16 +5,17 @@ import { createInterface } from 'node:readline';
 import path from 'node:path';
 
 const DEFAULT_SETTINGS = {
-  mode: 'text', // 'text' | 'image'
+  mode: 'image', // 'image' (default built-in watermark.png from watermarker) | 'text'
   watermarkText: '内部样片 · 严禁外传',
-  watermarkImage: '',
-  position: 'tile', // 'tile' | 'bottom-right' | 'top-right' | 'top-left' | 'bottom-left' | 'center'
-  opacity: 0.35,
+  watermarkImage: 'builtin',
+  position: 'fullscreen', // 'fullscreen' (watermarker default) | 'tile' | 'bottom-right' | 'top-right' | 'top-left' | 'bottom-left' | 'center'
+  opacity: 1,
   scale: 0.28,
   size: 'original', // 'original' | '1080p' | '720p' | '480p'
   crf: 23,
+  audioMode: 'auto', // 'auto' | 'aac'
   outputDir: '',
-  suffix: '_watermarked',
+  suffix: '样片',
 };
 
 export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange = () => {} }) {
@@ -156,6 +157,27 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
         await writeFile(verifiedMarker, manifest.sha256, 'utf8').catch(() => {});
       }
 
+      // Ensure the built-in watermark.png (from Kirota233/watermarker) is present next to WatermarkEngine.exe
+      const cachedWmPng = path.join(cacheDir, 'watermark.png');
+      try {
+        await stat(cachedWmPng);
+      } catch {
+        for (const candidate of [
+          path.join(buildDir, 'watermark.png'),
+          path.join(appDirectory, 'assets', 'watermark.png'),
+          path.join(appDirectory, 'public', 'watermark.png'),
+          path.join(appDirectory, 'dist', 'client', 'watermark.png'),
+        ]) {
+          try {
+            const pngBytes = await readFile(candidate);
+            await writeFile(cachedWmPng, pngBytes);
+            break;
+          } catch {
+            /* try next candidate */
+          }
+        }
+      }
+
       const handle = spawn(executable, [], {
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'ignore'],
@@ -222,7 +244,7 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
     const targetDir = settings.outputDir && settings.outputDir.trim()
       ? settings.outputDir.trim()
       : parsed.dir;
-    const suffix = (settings.suffix || '_watermarked').trim() || '_watermarked';
+    const suffix = (settings.suffix || '样片').trim() || '样片';
     return path.join(targetDir, `${parsed.name}${suffix}.mp4`);
   }
 
@@ -342,18 +364,22 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
           emit();
 
           try {
+            const resolvedWmImage = settings.mode === 'image'
+              ? (settings.watermarkImage || 'builtin')
+              : '';
             const res = await sendRpc(
               'process',
               {
                 input: job.inputPath,
                 output: job.outputPath,
-                watermarkImage: settings.mode === 'image' ? settings.watermarkImage : '',
+                watermarkImage: resolvedWmImage,
                 watermarkText: settings.watermarkText || '内部样片 · 严禁外传',
-                position: settings.position || 'tile',
+                position: settings.position || 'fullscreen',
                 opacity: settings.opacity,
                 scale: settings.scale,
                 size: settings.size || 'original',
                 crf: settings.crf || 23,
+                audioMode: settings.audioMode || 'auto',
               },
               pct => {
                 job.progress = Math.max(1, Math.min(99, pct));

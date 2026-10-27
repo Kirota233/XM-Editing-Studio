@@ -1,0 +1,106 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵</title><style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+    font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
+  button { font: inherit; cursor: pointer; }
+
+  .stage { position: relative; width: 132px; height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; -webkit-app-region: no-drag; }
+  .cat { position: relative; width: 96px; height: 92px; animation: bob 3.4s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+  .ring { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; margin: -46px 0 0 -50px; transform: rotate(-90deg); pointer-events: none; }
+  .ring circle { fill: none; stroke-width: 4; }
+  .ring .bg { stroke: rgba(255,255,255,.14); }
+  .ring .fg { stroke: #ffcf6e; stroke-linecap: round; transition: stroke-dashoffset .3s ease; filter: drop-shadow(0 0 4px #ffb347); }
+  .ear { position: absolute; top: 2px; width: 30px; height: 30px; border-radius: 6px 22px 4px 22px;
+    background: linear-gradient(140deg, #ffe0b0, #ffb562); border: 2px solid #4a2f1d; transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
+  .ear::after { content: ""; position: absolute; inset: 6px; border-radius: 4px 14px 2px 14px; background: #ff9fb3; opacity: .85; }
+  .ear.l { left: 12px; transform: rotate(-12deg); }
+  .ear.r { right: 12px; transform: rotate(102deg); }
+  .cat:hover .ear.l { transform: rotate(-24deg) translateY(-2px); }
+  .cat:hover .ear.r { transform: rotate(114deg) translateY(-2px); }
+  .head { position: absolute; left: 8px; right: 8px; top: 16px; bottom: 2px; border-radius: 44% 44% 40% 40%;
+    background: radial-gradient(circle at 35% 28%, #fff4de, #ffd08a 58%, #f5a24a); border: 2px solid #4a2f1d;
+    box-shadow: 0 12px 26px rgba(0,0,0,.45), inset 0 -6px 10px rgba(201,112,32,.35); }
+  .face { position: absolute; inset: 0; cursor: pointer; border-radius: inherit; }
+  .stripe { position: absolute; top: 4px; width: 4px; height: 12px; border-radius: 4px; background: #d9822b; left: 50%; }
+  .stripe.a { margin-left: -9px; transform: rotate(-12deg); } .stripe.b { margin-left: -2px; } .stripe.c { margin-left: 5px; transform: rotate(12deg); }
+  .eye { position: absolute; top: 30px; width: 9px; height: 12px; border-radius: 50%; background: #2a1a10; animation: blink 4.6s infinite; }
+  .eye::after { content: ""; position: absolute; top: 2px; left: 2px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
+  .eye.l { left: 22px; } .eye.r { right: 22px; }
+  @keyframes blink { 0%,93%,97%,100% { transform: scaleY(1) } 95% { transform: scaleY(.1) } }
+  .nose { position: absolute; top: 44px; left: 50%; margin-left: -4px; width: 8px; height: 6px; border-radius: 50% 50% 60% 60%; background: #ff7d96; }
+  .mouth { position: absolute; top: 49px; left: 50%; margin-left: -9px; width: 18px; height: 8px; }
+  .mouth::before, .mouth::after { content: ""; position: absolute; top: 0; width: 9px; height: 7px; border: 2px solid #4a2f1d; border-top: 0; border-radius: 0 0 9px 9px; }
+  .mouth::before { left: 0; } .mouth::after { right: 0; }
+  .blush { position: absolute; top: 46px; width: 11px; height: 6px; border-radius: 50%; background: rgba(255,120,150,.55); }
+  .blush.l { left: 11px; } .blush.r { right: 11px; }
+  .whisker { position: absolute; top: 46px; width: 16px; height: 2px; border-radius: 2px; background: rgba(74,47,29,.6); }
+  .whisker.l1 { left: -6px; transform: rotate(8deg); } .whisker.l2 { left: -6px; top: 52px; transform: rotate(-6deg); }
+  .whisker.r1 { right: -6px; transform: rotate(-8deg); } .whisker.r2 { right: -6px; top: 52px; transform: rotate(6deg); }
+  .coin { position: absolute; right: -6px; bottom: -4px; width: 30px; height: 30px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff3b0, #ffc93c 60%, #d99a12); border: 2px solid #7a4d07;
+    color: #7a4d07; font-size: 13px; font-weight: 900; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,.4); animation: spin 6s ease-in-out infinite; }
+  @keyframes spin { 0%,80%,100% { transform: rotateY(0) } 90% { transform: rotateY(180deg) } }
+  .tag { margin-top: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+    background: rgba(20,16,12,.78); color: #ffd58a; border: 1px solid rgba(255,207,110,.5); backdrop-filter: blur(10px);
+    cursor: pointer; white-space: nowrap; }
+  .stage.busy .tag { color: #1c1206; background: #ffcf6e; }
+  </style></head><body>
+  <div class="stage" id="stage" title="月薪喵 · 点击展开/收起剪映插件面板，按住可拖动位置">
+    <div class="cat">
+      <svg class="ring" viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="46"/><circle class="fg" id="ring" cx="50" cy="50" r="46" stroke-dasharray="289" stroke-dashoffset="289"/></svg>
+      <div class="ear l"></div><div class="ear r"></div>
+      <div class="head">
+        <div class="face" id="face">
+          <span class="stripe a"></span><span class="stripe b"></span><span class="stripe c"></span>
+          <span class="eye l"></span><span class="eye r"></span>
+          <span class="blush l"></span><span class="blush r"></span>
+          <span class="nose"></span><span class="mouth"></span>
+          <span class="whisker l1"></span><span class="whisker l2"></span><span class="whisker r1"></span><span class="whisker r2"></span>
+        </div>
+      </div>
+      <div class="coin">薪</div>
+    </div>
+    <div class="tag" id="tag">月薪喵</div>
+  </div>
+  <script>
+    const api = window.blackObsidian;
+    const ring = document.getElementById('ring'), tag = document.getElementById('tag'), stage = document.getElementById('stage');
+    const togglePanel = () => api?.companionAction?.('panel', 'toggle');
+    let down = false, dragged = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
+    stage.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      down = true; dragged = false;
+      startX = lastX = e.screenX;
+      startY = lastY = e.screenY;
+      try { stage.setPointerCapture(e.pointerId); } catch {}
+    });
+    stage.addEventListener('pointermove', e => {
+      if (!down) return;
+      const total = Math.hypot(e.screenX - startX, e.screenY - startY);
+      if (total >= 5) dragged = true;
+      if (dragged) {
+        const dx = e.screenX - lastX, dy = e.screenY - lastY;
+        lastX = e.screenX; lastY = e.screenY;
+        if (dx || dy) api?.companionAction?.('move-by', { dx, dy });
+      }
+    });
+    stage.addEventListener('pointerup', e => {
+      if (!down) return;
+      down = false;
+      try { stage.releasePointerCapture(e.pointerId); } catch {}
+      if (!dragged) togglePanel();
+    });
+    function render(s) {
+      if (!s) return;
+      const wm = s.watermark || {}, jy = s.jianying || {};
+      const busy = wm.running || jy.busy || jy.exporting;
+      const pct = wm.running ? wm.overallProgress : (jy.exporting || jy.busy ? 60 : 0);
+      ring.style.strokeDashoffset = String(289 - 289 * Math.max(0, Math.min(100, pct)) / 100);
+      stage.className = 'stage' + (busy ? ' busy' : '');
+      tag.textContent = wm.running ? '搬砖中 ' + wm.overallProgress + '%' : jy.exporting ? '导出中…' : jy.busy ? '干活中…' : s.panelOpen ? '月薪喵 ▾' : '月薪喵';
+    }
+    api?.onCompanionState?.(render);
+    api?.companionAction?.('sync').then(render).catch(() => {});
+  </script></body></html>

@@ -141,6 +141,48 @@ try {
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $SetupExePath)) {
     throw "NSIS installer compilation failed."
   }
+
+  # Build lightweight < 2 MB Update.exe (contains only resources/app.asar + resources/helpers/PeriodKeeper.exe + 使用说明.txt)
+  $UpdateExeName = "XM-Editing-Studio-$Version-Windows-x64-Update.exe"
+  $UpdateExePath = Join-Path $OutputDir $UpdateExeName
+  $GenUpdateConfigNsh = Join-Path $InstallerDir "generated-update-config.nsh"
+  $GenUpdateInstallNsh = Join-Path $InstallerDir "generated-update-install.nsh"
+  Write-Host "[1b/2] Building lightweight NSIS update package (<2MB): $UpdateExeName"
+  try {
+    $UpdateConfigLines = @(
+      "!define APP_VERSION `"$Version`"",
+      "!define APP_FILE_VERSION `"$FileVersion`"",
+      "!define UPDATE_OUTPUT_FILE `"$UpdateExePath`""
+    )
+    [System.IO.File]::WriteAllLines($GenUpdateConfigNsh, $UpdateConfigLines, $Utf8Bom)
+
+    $UpdateInstallLines = New-Object System.Collections.Generic.List[string]
+    $AsarFile = Join-Path $PackagedRoot "resources\app.asar"
+    $HelperFile = Join-Path $PackagedRoot "resources\helpers\PeriodKeeper.exe"
+    if (Test-Path -LiteralPath $AsarFile) {
+      $UpdateInstallLines.Add('SetOutPath "$INSTDIR\resources"')
+      $UpdateInstallLines.Add("File `"$AsarFile`"")
+    }
+    if (Test-Path -LiteralPath $HelperFile) {
+      $UpdateInstallLines.Add('SetOutPath "$INSTDIR\resources\helpers"')
+      $UpdateInstallLines.Add("File `"$HelperFile`"")
+    }
+    if (Test-Path -LiteralPath $InstallerGuidePath) {
+      $UpdateInstallLines.Add('SetOutPath "$INSTDIR"')
+      $UpdateInstallLines.Add("File `"$InstallerGuidePath`"")
+    }
+    [System.IO.File]::WriteAllLines($GenUpdateInstallNsh, $UpdateInstallLines, $Utf8Bom)
+
+    $UpdateNsiPath = Join-Path $InstallerDir "update.nsi"
+    $UpdateNsiText = [System.IO.File]::ReadAllText($UpdateNsiPath, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($UpdateNsiPath, $UpdateNsiText, $Utf8Bom)
+    & $Makensis /V2 /INPUTCHARSET UTF8 $UpdateNsiPath
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $UpdateExePath)) {
+      throw "NSIS lightweight update compilation failed."
+    }
+  } finally {
+    Remove-Item $GenUpdateConfigNsh, $GenUpdateInstallNsh -Force -ErrorAction SilentlyContinue
+  }
 } finally {
   Remove-Item $GenConfigNsh, $GenInstallNsh, $GenUninstallNsh, $GenUninstallDirsNsh -Force -ErrorAction SilentlyContinue
 }

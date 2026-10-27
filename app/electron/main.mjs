@@ -54,7 +54,7 @@ const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWind
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
 const autoUpdater = createAutoUpdater({
-  currentVersion: app.getVersion() || '1.5.0',
+  currentVersion: app.getVersion() || '1.5.1',
   downloadDirectory: path.join(app.getPath('userData'), 'updates'),
   onQuit: () => app.quit(),
   notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },

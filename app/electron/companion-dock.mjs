@@ -26,8 +26,8 @@ const SHARED_STYLE = `
 
 function orbHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵</title><style>${SHARED_STYLE}
-  .stage { position: relative; width: 132px; height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .cat { position: relative; width: 96px; height: 92px; -webkit-app-region: drag; animation: bob 3.4s ease-in-out infinite; }
+  .stage { position: relative; width: 132px; height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; -webkit-app-region: no-drag; }
+  .cat { position: relative; width: 96px; height: 92px; animation: bob 3.4s ease-in-out infinite; }
   @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
   .ring { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; margin: -46px 0 0 -50px; transform: rotate(-90deg); pointer-events: none; }
   .ring circle { fill: none; stroke-width: 4; }
@@ -43,7 +43,7 @@ function orbHtml() {
   .head { position: absolute; left: 8px; right: 8px; top: 16px; bottom: 2px; border-radius: 44% 44% 40% 40%;
     background: radial-gradient(circle at 35% 28%, #fff4de, #ffd08a 58%, #f5a24a); border: 2px solid #4a2f1d;
     box-shadow: 0 12px 26px rgba(0,0,0,.45), inset 0 -6px 10px rgba(201,112,32,.35); }
-  .face { position: absolute; inset: 0; -webkit-app-region: no-drag; cursor: pointer; border-radius: inherit; }
+  .face { position: absolute; inset: 0; cursor: pointer; border-radius: inherit; }
   .stripe { position: absolute; top: 4px; width: 4px; height: 12px; border-radius: 4px; background: #d9822b; left: 50%; }
   .stripe.a { margin-left: -9px; transform: rotate(-12deg); } .stripe.b { margin-left: -2px; } .stripe.c { margin-left: 5px; transform: rotate(12deg); }
   .eye { position: absolute; top: 30px; width: 9px; height: 12px; border-radius: 50%; background: #2a1a10; animation: blink 4.6s infinite; }
@@ -66,11 +66,11 @@ function orbHtml() {
   @keyframes spin { 0%,80%,100% { transform: rotateY(0) } 90% { transform: rotateY(180deg) } }
   .tag { margin-top: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .5px;
     background: rgba(20,16,12,.78); color: #ffd58a; border: 1px solid rgba(255,207,110,.5); backdrop-filter: blur(10px);
-    -webkit-app-region: no-drag; cursor: pointer; white-space: nowrap; }
+    cursor: pointer; white-space: nowrap; }
   .stage.busy .tag { color: #1c1206; background: #ffcf6e; }
   </style></head><body>
-  <div class="stage" id="stage">
-    <div class="cat" title="月薪喵 · 点击展开剪映插件面板，拖动耳朵可移动">
+  <div class="stage" id="stage" title="月薪喵 · 点击展开/收起剪映插件面板，按住可拖动位置">
+    <div class="cat">
       <svg class="ring" viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="46"/><circle class="fg" id="ring" cx="50" cy="50" r="46" stroke-dasharray="289" stroke-dashoffset="289"/></svg>
       <div class="ear l"></div><div class="ear r"></div>
       <div class="head">
@@ -89,9 +89,31 @@ function orbHtml() {
   <script>
     const api = window.blackObsidian;
     const ring = document.getElementById('ring'), tag = document.getElementById('tag'), stage = document.getElementById('stage');
-    const open = () => api?.companionAction?.('panel', 'toggle');
-    document.getElementById('face').addEventListener('click', open);
-    tag.addEventListener('click', open);
+    const togglePanel = () => api?.companionAction?.('panel', 'toggle');
+    let down = false, dragged = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
+    stage.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      down = true; dragged = false;
+      startX = lastX = e.screenX;
+      startY = lastY = e.screenY;
+      try { stage.setPointerCapture(e.pointerId); } catch {}
+    });
+    stage.addEventListener('pointermove', e => {
+      if (!down) return;
+      const total = Math.hypot(e.screenX - startX, e.screenY - startY);
+      if (total >= 5) dragged = true;
+      if (dragged) {
+        const dx = e.screenX - lastX, dy = e.screenY - lastY;
+        lastX = e.screenX; lastY = e.screenY;
+        if (dx || dy) api?.companionAction?.('move-by', { dx, dy });
+      }
+    });
+    stage.addEventListener('pointerup', e => {
+      if (!down) return;
+      down = false;
+      try { stage.releasePointerCapture(e.pointerId); } catch {}
+      if (!dragged) togglePanel();
+    });
     function render(s) {
       if (!s) return;
       const wm = s.watermark || {}, jy = s.jianying || {};
@@ -307,8 +329,8 @@ export function createCompanionDock({
   let lastJianying = null;
   const acrylic = supportsAcrylic();
   const normalizedBaseUrl = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
-  const resolveOrbUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion.html?mode=orb` : toDataUrl(orbHtml());
-  const resolvePanelUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion.html?mode=panel&acrylic=${acrylic ? '1' : '0'}` : toDataUrl(panelHtml(acrylic));
+  const resolveOrbUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion-orb.html` : toDataUrl(orbHtml());
+  const resolvePanelUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion-panel.html?acrylic=${acrylic ? '1' : '0'}` : toDataUrl(panelHtml(acrylic));
 
   const webPreferences = { contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false, preload: preloadPath };
   const alive = w => w && !w.isDestroyed();
@@ -429,7 +451,8 @@ export function createCompanionDock({
     if (panelOpen) {
       const p = await ensurePanel();
       placePanel();
-      p.showInactive();
+      p.show();
+      p.moveTop?.();
       p.focus();
     } else if (alive(panel)) {
       panel.hide();
@@ -441,6 +464,7 @@ export function createCompanionDock({
     visible = true;
     const o = await ensureOrb();
     o.showInactive();
+    o.moveTop?.();
     startLoop();
     if (openPanel) await setPanel(true);
     return broadcastState();
@@ -456,7 +480,12 @@ export function createCompanionDock({
   }
 
   async function toggle() {
-    return visible && alive(orb) && orb.isVisible() ? hide() : show(false);
+    // When invoked from the main window's "🐱 月薪喵" button or tray:
+    // if the plugin panel is not currently open, show the orb AND pop open the frosted-glass panel on top.
+    if (!visible || !alive(orb) || !orb.isVisible() || !panelOpen || !alive(panel) || !panel.isVisible()) {
+      return show(true);
+    }
+    return hide();
   }
 
   async function handleAction(action, value) {
@@ -465,6 +494,17 @@ export function createCompanionDock({
     if (action === 'hide') return hide();
     if (action === 'toggle') return toggle();
     if (action === 'panel' || action === 'expand') return setPanel(value);
+    if (action === 'move-by') {
+      if (alive(orb)) {
+        autoDock = false;
+        const [cx, cy] = orb.getPosition();
+        const dx = Number(value?.dx) || 0;
+        const dy = Number(value?.dy) || 0;
+        orb.setPosition(Math.round(cx + dx), Math.round(cy + dy), false);
+        placePanel();
+      }
+      return broadcastState();
+    }
     if (action === 'toggle-dock') { autoDock = !autoDock; await tick(); return broadcastState(); }
     try {
       await onAction?.(action, value);

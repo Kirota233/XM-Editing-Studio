@@ -63,8 +63,10 @@ const compiled = await build({ entryPoints: ['app/src/upgrade.tsx'], bundle: tru
 const ui = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 function nodes(tree, predicate) { if (!tree || typeof tree !== 'object') return []; return [...(predicate(tree) ? [tree] : []), ...(tree.children || []).flat(Infinity).flatMap(child => nodes(child, predicate))]; }
 const textOf = tree => (tree?.children || []).flat(Infinity).map(child => typeof child === 'object' ? textOf(child) : child ?? '').join('');
-test('sixth page exposes four separately collapsible panels and reuses existing provider choices', () => {
+test('sixth page exposes four separately collapsible panels, 4-stage top bar with watermark, and reuses existing provider choices', () => {
   const tree = ui.JianyingStudio({ active: true, providers: [{ id: 'existing', name: '已有连接', protocol: 'openai', models: ['gemini-test'], apiKey: 'hidden-key' }], onNavigate: () => {} });
+  const stageTabs = nodes(tree, node => node.type === 'button' && String(node.props.className || '').includes('bos-stage-tab'));
+  assert.equal(stageTabs.length, 4, 'JianyingStudio must expose 4 top-level stage tabs (批量导出, 字幕工程, 批量改名, 样片水印)');
   const toggles = nodes(tree, node => node.type === 'button' && node.props['aria-controls']?.startsWith('jy-'));
   assert.equal(toggles.length, 4); assert.equal(new Set(toggles.map(item => item.props['aria-controls'])).size, 4);
   assert.match(textOf(tree), /已有连接/); assert.doesNotMatch(textOf(tree), /hidden-key/);
@@ -81,19 +83,25 @@ test('workspace removes music requirements and SRT restoration while preserving 
   assert.doesNotMatch(textOf(tree), /配乐要求|选择 SRT|下载标点还原/);
   assert.match(textOf(tree), /原工具方式/); assert.match(textOf(tree), /复制到剪映/);
 });
-test('right quick rail is removed while the left sidebar keeps an accessible resize handle and bottom-left open-source/author credits', () => {
+test('right quick rail is removed while the left sidebar keeps an accessible resize handle and bottom-left collapsed dependencies/author credits', () => {
   assert.equal(ui.QuickRail, undefined);
   const handle = ui.SidebarResizer(); assert.equal(handle.props.role, 'separator'); assert.equal(handle.props['aria-orientation'], 'vertical');
   const credits = ui.SidebarCredits();
   const creditsText = textOf(credits);
   assert.match(creditsText, /作者：\s*小马/);
   assert.match(creditsText, /重构：\s*塔奇/);
+  assert.match(creditsText, /贡献代码/);
+  assert.match(creditsText, /项目依赖/);
+  const drawer = nodes(credits, n => n.props?.id === 'bos-credits-projects')[0];
+  assert.equal(drawer.props.hidden, true, 'SidebarCredits project dependencies must be collapsed by default');
+  const contributeLink = nodes(credits, n => n.type === 'a' && String(n.props.className || '').includes('bos-credits-contribute'))[0];
+  assert.equal(contributeLink.props.href, 'https://github.com/Kirota233/XM-Editing-Studio');
   assert.equal(ui.OPEN_SOURCE_PROJECTS.length, 3);
   for (const name of ['watermarker', 'JianYing-Period-Keeper', 'JianYing-AI-Pro']) {
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.5\.0/);
+  assert.match(textOf(titleBar), /v1\.5\.1/);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {

@@ -287,9 +287,15 @@ namespace XMWatermark
                     {
                         ia.SetColorMatrix(cm, ColorMatrixFlag.Default, ColorAdjustType.Bitmap);
 
-                        if (!string.IsNullOrEmpty(watermarkImagePath) && File.Exists(watermarkImagePath))
+                        string resolvedImagePath = watermarkImagePath;
+                        if (string.Equals(resolvedImagePath, "builtin", StringComparison.OrdinalIgnoreCase))
                         {
-                            using (Image wmImg = Image.FromFile(watermarkImagePath))
+                            resolvedImagePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "watermark.png");
+                        }
+
+                        if (!string.IsNullOrEmpty(resolvedImagePath) && File.Exists(resolvedImagePath))
+                        {
+                            using (Image wmImg = Image.FromFile(resolvedImagePath))
                             {
                                 DrawOverlayImage(g, wmImg, ia, width, height, position, scale);
                             }
@@ -378,6 +384,14 @@ namespace XMWatermark
 
         private static void DrawOverlayImage(Graphics g, Image wm, ImageAttributes ia, int width, int height, string position, double scale)
         {
+            if (position == "fullscreen")
+            {
+                // Exact behavior of Kirota233/watermarker: [1:v][0:v]scale2ref=w=main_w:h=main_h[wm][video];[video][wm]overlay=0:0
+                Rectangle fullRect = new Rectangle(0, 0, width, height);
+                g.DrawImage(wm, fullRect, 0, 0, wm.Width, wm.Height, GraphicsUnit.Pixel, ia);
+                return;
+            }
+
             int targetW = Math.Max(48, (int)Math.Round(width * scale));
             int targetH = Math.Max(24, (int)Math.Round((double)wm.Height / wm.Width * targetW));
             int padX = Math.Max(16, (int)(width * 0.03));
@@ -575,13 +589,14 @@ namespace XMWatermark
                 writerAttr.SetUINT32(ref MFInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1);
                 MFInterop.MFCreateSinkWriterFromURL(Path.GetFullPath(tempOutput), IntPtr.Zero, writerAttr, out writer);
 
-                // Configure H.264 Output Stream
+                // Configure H.264 Output Stream (bitrate scaling aligned with Kirota233/watermarker: 12Mbps / 5Mbps / 2Mbps @ 1080p)
                 IMFMediaType videoOut;
                 MFInterop.MFCreateMediaType(out videoOut);
                 videoOut.SetGUID(ref MFInterop.MF_MT_MAJOR_TYPE, ref MFInterop.MFMediaType_Video);
                 videoOut.SetGUID(ref MFInterop.MF_MT_SUBTYPE, ref MFInterop.MFVideoFormat_H264);
-                double bpp = qualityCrf <= 18 ? 0.22 : qualityCrf >= 28 ? 0.08 : 0.14;
-                uint bitrate = (uint)Math.Max(600000, Math.Min(25000000, outW * outH * 30 * bpp));
+                double baseBitrate = qualityCrf <= 18 ? 12000000.0 : (qualityCrf >= 28 ? 2000000.0 : 5000000.0);
+                double areaRatio = (double)(outW * outH) / (1920.0 * 1080.0);
+                uint bitrate = (uint)Math.Max(500000, Math.Min(30000000, Math.Round(baseBitrate * areaRatio)));
                 videoOut.SetUINT32(ref MFInterop.MF_MT_AVG_BITRATE, bitrate);
                 videoOut.SetUINT32(ref MFInterop.MF_MT_INTERLACE_MODE, 2); // Progressive
                 videoOut.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));

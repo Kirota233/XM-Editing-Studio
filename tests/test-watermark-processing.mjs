@@ -45,13 +45,15 @@ test('createWatermarkHost manages video batch queue, settings persistence, outpu
       const initial = await host.getState();
       assert.equal(initial.engine, 'windows-media-foundation-hw');
       assert.equal(initial.totalCount, 0);
-      assert.equal(initial.settings.position, 'tile');
+      assert.equal(initial.settings.position, 'fullscreen');
+      assert.equal(initial.settings.watermarkImage, 'builtin');
+      assert.equal(initial.settings.suffix, '样片');
 
       // Add videos and verify deduplication of pending paths
       const afterAdd = await host.addVideos([sampleA, sampleB, sampleA]);
       assert.equal(afterAdd.totalCount, 2);
       assert.equal(afterAdd.jobs[0].fileName, '样片A.mp4');
-      assert.equal(afterAdd.jobs[0].outputPath, path.join(root, '样片A_watermarked.mp4'));
+      assert.equal(afterAdd.jobs[0].outputPath, path.join(root, '样片A样片.mp4'));
 
       // Update settings and verify pending job output paths update automatically
       const afterSettings = await host.updateSettings({
@@ -135,14 +137,17 @@ test('Native WatermarkStudio UI and Bottom-Right Radial BatchTray render without
       .map(child => (typeof child === 'object' ? textOf(child) : child ?? ''))
       .join('');
 
-  // 1. Verify WatermarkStudio has NO iframe and renders native controls
+  // 1. Verify WatermarkStudio has NO iframe and renders native controls + built-in watermark.png preview
   const wmTree = ui.WatermarkStudio({ active: true });
   assert.equal(nodes(wmTree, n => n.type === 'iframe').length, 0, 'WatermarkStudio must not use an iframe web wrapper');
   const wmText = textOf(wmTree);
   assert.match(wmText, /实时画面水印预览/);
   assert.match(wmText, /C# 原生硬件加速/);
-  assert.match(wmText, /满屏斜纹防盗/);
+  assert.match(wmText, /原版全画幅覆盖/);
+  assert.match(wmText, /红薯样片/);
   assert.match(wmText, /批量视频处理队列/);
+  const previewImg = nodes(wmTree, n => n.type === 'img' && n.props.src === '/watermark.png');
+  assert.equal(previewImg.length, 1, 'WatermarkStudio must preview the built-in /watermark.png from watermarker');
 
   // 2. Verify BatchTray renders bottom-right radial orb + 5 surrounding satellite nodes
   const trayTree = ui.BatchTray({ activeTab: 'watermark', onNavigate: () => {}, automation: { jobs: [] } });

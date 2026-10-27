@@ -1,12 +1,27 @@
 import { isGeminiModel } from '../shared/script-score.mjs';
 import { usePanelCollapsed } from './PanelState.jsx';
+import { WatermarkStudio } from './WatermarkStudio.tsx';
 
 declare const i: any;
 
-function ToolPanel({ id, number, title, detail, children }: { id: string; number: string; title: string; detail: string; children: any }) {
+function ToolPanel({
+  id,
+  number,
+  title,
+  detail,
+  hiddenStage,
+  children,
+}: {
+  id: string;
+  number: string;
+  title: string;
+  detail: string;
+  hiddenStage?: boolean;
+  children: any;
+}) {
   const [collapsed, toggle] = usePanelCollapsed('jianying-' + id);
   return (
-    <section className="bos-jy-panel" data-panel-id={id}>
+    <section className="bos-jy-panel" data-panel-id={id} hidden={hiddenStage}>
       <header>
         <div className="bos-jy-panel-title">
           <span className="bos-jy-step-badge">{number}</span>
@@ -52,8 +67,18 @@ const empty = {
   status: '正在准备本地引擎…',
 };
 
+export type JianyingStage = 'export' | 'subtitles' | 'rename' | 'watermark';
+
 export function JianyingStudio({ active, providers, onNavigate }: { active: boolean; providers: any[]; onNavigate: (tab: string) => void }) {
   const [visited, setVisited] = i.useState(active);
+  const [stage, setStage] = i.useState<JianyingStage>(() => {
+    try {
+      const saved = localStorage.getItem('xm.jianying.stage') as JianyingStage;
+      return ['export', 'subtitles', 'rename', 'watermark'].includes(saved) ? saved : 'export';
+    } catch {
+      return 'export';
+    }
+  });
   const [state, setState] = i.useState(empty as any);
   const [error, setError] = i.useState('');
   const [pending, setPending] = i.useState(false);
@@ -66,6 +91,15 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   const [templateName, setTemplateName] = i.useState('');
   const [exportOptionsCollapsed, toggleExportOptions] = usePanelCollapsed('jianying-export-options');
 
+  const selectStage = (next: JianyingStage) => {
+    setStage(next);
+    try {
+      localStorage.setItem('xm.jianying.stage', next);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const api = (globalThis as any).blackObsidian;
   const models = providers.flatMap(provider =>
     (provider.models || [])
@@ -76,8 +110,21 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   const locked = pending || state.busy || state.recording || !!state.modal;
 
   i.useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
     window.dispatchEvent(new CustomEvent('bos:jianying-state-sync', { detail: state }));
   }, [state]);
+
+  i.useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const onStage = (event: any) => {
+      const target = event?.detail as JianyingStage;
+      if (['export', 'subtitles', 'rename', 'watermark'].includes(target)) {
+        selectStage(target);
+      }
+    };
+    window.addEventListener('xm-jianying-stage', onStage);
+    return () => window.removeEventListener('xm-jianying-stage', onStage);
+  }, []);
   i.useEffect(() => { if (active) setVisited(true); }, [active]);
   i.useEffect(() => {
     if (!active || !visited || !api?.jianyingAction) return;
@@ -129,31 +176,88 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   });
 
   return (
-    <section className="bos-script bos-jianying" hidden={!active} aria-label="JianYing-Ai-Pro">
-      <div className="bos-jy-overview">
-        <div>
-          <span className="bos-script-eyebrow">JIANYING AUTOMATION</span>
-          <h2>剪映自动化中心</h2>
+    <section className="bos-script bos-jianying" data-jy-stage={stage} hidden={!active} aria-label="JianYing-Ai-Pro">
+      {/* Top-Level Prominent 4-Stage Navigation Bar (Unified with Workspace 3-Stage Bar) */}
+      <nav className="bos-top-stage-bar bos-top-stage-bar-4" role="tablist" aria-label="剪映自动化与样片水印四大核心模块">
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${stage === 'export' ? 'is-active' : ''}`}
+          aria-selected={stage === 'export'}
+          onClick={() => selectStage('export')}
+        >
+          <span className="bos-stage-num">01</span>
+          <div className="bos-stage-text">
+            <strong>批量导出</strong>
+            <small>AI 识别剪映草稿 · 全自动顺序导出</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${stage === 'subtitles' ? 'is-active' : ''}`}
+          aria-selected={stage === 'subtitles'}
+          onClick={() => selectStage('subtitles')}
+        >
+          <span className="bos-stage-num">02</span>
+          <div className="bos-stage-text">
+            <strong>字幕工程</strong>
+            <small>提取 SRT 字幕 · 统一字体与显隐轨道</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${stage === 'rename' ? 'is-active' : ''}`}
+          aria-selected={stage === 'rename'}
+          onClick={() => selectStage('rename')}
+        >
+          <span className="bos-stage-num">03</span>
+          <div className="bos-stage-text">
+            <strong>批量改名</strong>
+            <small>集数模板或 AI 语义对齐 · 预览后执行</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${stage === 'watermark' ? 'is-active' : ''}`}
+          aria-selected={stage === 'watermark'}
+          onClick={() => selectStage('watermark')}
+        >
+          <span className="bos-stage-num">04</span>
+          <div className="bos-stage-text">
+            <strong>样片水印</strong>
+            <small>内置红薯样片图层 · C# 硬件加速批处理</small>
+          </div>
+        </button>
+      </nav>
+
+      {stage !== 'watermark' && (
+        <div className="bos-jy-overview">
           <div className="bos-jy-hotkeys">
-            <span className="bos-hotkey-pill"><kbd>F8</kbd> 录制坐标</span>
-            <span className="bos-hotkey-pill"><kbd>F9</kbd> 跳过等待</span>
-            <span className="bos-hotkey-pill"><kbd>F10</kbd> 紧急中断</span>
+            <span className="bos-jy-pill"><kbd>F8</kbd> 录制坐标</span>
+            <span className="bos-jy-pill"><kbd>F9</kbd> 跳过等待</span>
+            <span className="bos-jy-pill"><kbd>F10</kbd> 紧急中断</span>
+          </div>
+          <div className="bos-jy-status-box">
+            <span className={`bos-status-dot${state.ready ? ' is-online' : ''}`} />
+            <span role="status">{state.status}</span>
+            <button type="button" className="bos-danger-btn" onClick={() => run('stop')} disabled={!state.ready}>
+              中断 · F10
+            </button>
           </div>
         </div>
-        <div className="bos-jy-status-box">
-          <span className={`bos-status-dot${state.ready ? ' is-online' : ''}`} />
-          <span role="status">{state.status}</span>
-          <button type="button" className="bos-danger-btn" onClick={() => run('stop')} disabled={!state.ready}>
-            中断 · F10
-          </button>
-        </div>
-      </div>
+      )}
 
       {error && <p className="bos-script-alert" role="alert">{error}</p>}
       {state.notice && <p className="bos-script-message" role="status">{state.notice}</p>}
 
-      <div className="bos-jy-panels">
-        <ToolPanel id="export" number="01" title="批量导出" detail="AI 视觉识别剪映草稿队列，全自动顺序导出">
+      <div className="bos-jy-panels" hidden={stage === 'watermark'}>
+        <ToolPanel id="export" number="01" title="批量导出" detail="AI 视觉识别剪映草稿队列，全自动顺序导出" hiddenStage={stage !== 'export'}>
           <div className="bos-jy-toolbar">
             <button type="button" disabled={locked || !state.ready} onClick={() => run('wizard')}>录制坐标 · F8</button>
             <button type="button" disabled={locked || !connection || !state.ready} onClick={() => run('scan')}>AI 扫描草稿</button>
@@ -262,7 +366,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
           </section>
         </ToolPanel>
 
-        <ToolPanel id="subtitles" number="02" title="字幕工程" detail="提取 SRT 字幕、统一 Noto Sans Bold 字体或显隐轨道">
+        <ToolPanel id="subtitles" number="02" title="字幕工程" detail="提取 SRT 字幕、统一 Noto Sans Bold 字体或显隐轨道" hiddenStage={stage !== 'subtitles'}>
           <label>
             <span>剪映草稿根目录</span>
             <div className="bos-jy-path">
@@ -285,7 +389,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
           <small>操作前请先退出剪映，写入前自动创建安全备份。</small>
         </ToolPanel>
 
-        <ToolPanel id="rename" number="03" title="批量改名" detail="支持集数模板或 AI 语义对齐，先预览后执行">
+        <ToolPanel id="rename" number="03" title="批量改名" detail="支持集数模板或 AI 语义对齐，先预览后执行" hiddenStage={stage !== 'rename'}>
           <div className="bos-source-choice">
             <button type="button" aria-pressed={!aiRename} disabled={locked} onClick={() => setAiRename(false)}>按集数模板</button>
             <button type="button" aria-pressed={aiRename} disabled={locked} onClick={() => setAiRename(true)}>AI 智能命名</button>
@@ -323,7 +427,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
           </div>
         </ToolPanel>
 
-        <ToolPanel id="settings" number="04" title="模型连接" detail="复用全局 Gemini 模型，供草稿识别与智能改名调用">
+        <ToolPanel id="settings" number="AI" title="模型连接" detail="复用全局 Gemini 模型，供草稿识别与智能改名调用" hiddenStage={stage === 'subtitles'}>
           <label>
             <span>当前模型</span>
             <select
@@ -341,10 +445,14 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
         </ToolPanel>
       </div>
 
-      <details className="bos-jy-log">
-        <summary>运行日志 · {state.logs.length} 条记录</summary>
-        <pre>{state.logs.join('\n') || '暂无运行记录'}</pre>
-      </details>
+      <WatermarkStudio active={active && stage === 'watermark'} />
+
+      {stage !== 'watermark' && (
+        <details className="bos-jy-log">
+          <summary>运行日志 · {state.logs.length} 条记录</summary>
+          <pre>{state.logs.join('\n') || '暂无运行记录'}</pre>
+        </details>
+      )}
 
       {state.modal && (
         <div className="bos-jy-modal-backdrop">

@@ -16,11 +16,12 @@ export interface WatermarkSettings {
   mode: 'text' | 'image';
   watermarkText: string;
   watermarkImage: string;
-  position: 'tile' | 'bottom-right' | 'top-right' | 'top-left' | 'bottom-left' | 'center';
+  position: 'fullscreen' | 'tile' | 'bottom-right' | 'top-right' | 'top-left' | 'bottom-left' | 'center';
   opacity: number;
   scale: number;
   size: 'original' | '1080p' | '720p' | '480p';
   crf: number;
+  audioMode?: 'auto' | 'aac';
   outputDir: string;
   suffix: string;
 }
@@ -48,26 +49,28 @@ export const DEFAULT_WATERMARK_STATE: WatermarkState = {
   activeJobId: '',
   activeFileName: '',
   settings: {
-    mode: 'text',
+    mode: 'image',
     watermarkText: '内部样片 · 严禁外传',
-    watermarkImage: '',
-    position: 'tile',
-    opacity: 0.35,
+    watermarkImage: 'builtin',
+    position: 'fullscreen',
+    opacity: 1,
     scale: 0.28,
     size: 'original',
     crf: 23,
+    audioMode: 'auto',
     outputDir: '',
-    suffix: '_watermarked',
+    suffix: '样片',
   },
   jobs: [],
 };
 
 const POSITION_OPTIONS: Array<{ id: WatermarkSettings['position']; label: string; desc: string }> = [
+  { id: 'fullscreen', label: '原版全画幅覆盖', desc: '1:1 还原 watermarker 红薯样片图层' },
   { id: 'tile', label: '满屏斜纹防盗', desc: '全画幅斜向阵列平铺' },
-  { id: 'bottom-right', label: '右下角标', desc: '经典角标位置' },
-  { id: 'top-right', label: '右上角标', desc: '右上安全区' },
   { id: 'top-left', label: '左上角标', desc: '左上安全区' },
+  { id: 'top-right', label: '右上角标', desc: '右上安全区' },
   { id: 'bottom-left', label: '左下角标', desc: '左下安全区' },
+  { id: 'bottom-right', label: '右下角标', desc: '经典角标位置' },
   { id: 'center', label: '画面正中', desc: '强防盗中心醒目' },
 ];
 
@@ -216,8 +219,9 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
 
   const { settings, jobs, running, totalCount, completedCount, errorCount, overallProgress } = state;
   const pendingCount = jobs.filter(j => j.status === 'pending' || j.status === 'error' || j.status === 'cancelled').length;
-  const displayLabel = settings.mode === 'image' && settings.watermarkImage
-    ? `[图标] ${baseName(settings.watermarkImage)}`
+  const isBuiltinPng = settings.mode === 'image' && (!settings.watermarkImage || settings.watermarkImage === 'builtin');
+  const displayLabel = settings.mode === 'image'
+    ? (isBuiltinPng ? '红薯样片 (内置 watermark.png)' : `[图标] ${baseName(settings.watermarkImage)}`)
     : (settings.watermarkText || '内部样片 · 严禁外传');
 
   return (
@@ -225,7 +229,7 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
       <div className="bos-wm-layout">
         {/* Left Inspector Column */}
         <aside className="bos-wm-inspector">
-          {/* Interactive 16:9 Live Preview Card */}
+          {/* Interactive Live Preview Card */}
           <div className="bos-wm-card bos-wm-preview-card">
             <div className="bos-wm-card-head">
               <div>
@@ -241,14 +245,31 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
             >
               <div className="bos-wm-stage-grid" />
               <div className="bos-wm-stage-Safebox">
-                <span className="bos-wm-stage-tag">16:9 样片画幅预览</span>
+                <span className="bos-wm-stage-tag">{isBuiltinPng ? '红薯样片原版图层 (watermark.png)' : '样片画幅预览'}</span>
                 <span className="bos-wm-stage-res">
                   {settings.size === 'original' ? '原画分辨率直出' : settings.size.toUpperCase()}
                 </span>
               </div>
 
               {/* Watermark Overlay Rendering */}
-              {settings.position === 'tile' ? (
+              {isBuiltinPng && settings.position === 'fullscreen' ? (
+                <img
+                  src="/watermark.png"
+                  alt="红薯样片水印预览"
+                  className="bos-wm-builtin-img"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    objectPosition: 'left top',
+                    opacity: settings.opacity,
+                    pointerEvents: 'none',
+                    zIndex: 1,
+                  }}
+                />
+              ) : settings.position === 'tile' ? (
                 <div
                   className="bos-wm-overlay-tile"
                   style={{
@@ -264,7 +285,7 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
                 </div>
               ) : (
                 <div
-                  className={`bos-wm-overlay-single anchor-${settings.position}`}
+                  className={`bos-wm-overlay-single anchor-${settings.position === 'fullscreen' ? 'top-left' : settings.position}`}
                   style={{
                     opacity: settings.opacity,
                     fontSize: `${Math.round(11 + settings.scale * 22)}px`,
@@ -294,17 +315,17 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
             <div className="bos-wm-tabs" role="tablist">
               <button
                 type="button"
-                className={settings.mode === 'text' ? 'active' : ''}
-                onClick={() => updateSettings({ mode: 'text' })}
+                className={settings.mode === 'image' ? 'active' : ''}
+                onClick={() => updateSettings({ mode: 'image', watermarkImage: settings.watermarkImage || 'builtin', position: 'fullscreen', opacity: 1 })}
               >
-                文字防盗水印
+                原版红薯样片 / PNG 图标
               </button>
               <button
                 type="button"
-                className={settings.mode === 'image' ? 'active' : ''}
-                onClick={() => updateSettings({ mode: 'image' })}
+                className={settings.mode === 'text' ? 'active' : ''}
+                onClick={() => updateSettings({ mode: 'text', position: settings.position === 'fullscreen' ? 'tile' : settings.position })}
               >
-                透明 PNG 图标
+                文字防盗水印
               </button>
             </div>
 
@@ -355,13 +376,22 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
               </div>
             ) : (
               <div className="bos-wm-field-group">
-                <label className="bos-wm-label">本地 PNG / WebP 水印图像</label>
+                <label className="bos-wm-label">水印图像源（默认内置 watermarker 原版红薯样片）</label>
                 <div className="bos-wm-input-row">
-                  <div className="bos-wm-path-box" title={settings.watermarkImage || '未选择图片'}>
-                    {settings.watermarkImage ? baseName(settings.watermarkImage) : '未选择透明 PNG 图标（默认回退文字）'}
+                  <div className="bos-wm-path-box" title={isBuiltinPng ? '内置 watermark.png（红薯样片全画幅透明水印）' : settings.watermarkImage}>
+                    {isBuiltinPng ? '✓ 内置红薯样片 (watermark.png)' : baseName(settings.watermarkImage)}
                   </div>
+                  {!isBuiltinPng && (
+                    <button
+                      type="button"
+                      className="bos-wm-btn-subtle"
+                      onClick={() => updateSettings({ mode: 'image', watermarkImage: 'builtin', position: 'fullscreen', opacity: 1 })}
+                    >
+                      恢复默认
+                    </button>
+                  )}
                   <button type="button" className="bos-wm-btn-subtle" onClick={handleChooseImage}>
-                    选择图片
+                    自定义图片
                   </button>
                 </div>
               </div>
@@ -418,28 +448,28 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
 
             <div className="bos-wm-row-2col">
               <div className="bos-wm-field-group">
-                <label className="bos-wm-label">输出分辨率</label>
-                <select
-                  className="bos-wm-select"
-                  value={settings.size}
-                  onChange={(e: any) => updateSettings({ size: e.target.value })}
-                >
-                  <option value="original">原画分辨率直出</option>
-                  <option value="1080p">1080P 全高清</option>
-                  <option value="720p">720P 审片高清</option>
-                  <option value="480p">480P 极速小样</option>
-                </select>
-              </div>
-              <div className="bos-wm-field-group">
-                <label className="bos-wm-label">硬件编码码率档位</label>
+                <label className="bos-wm-label">画质级别 (CRF)</label>
                 <select
                   className="bos-wm-select"
                   value={String(settings.crf)}
                   onChange={(e: any) => updateSettings({ crf: Number(e.target.value) })}
                 >
-                  <option value="18">高画质归档 (CRF 18)</option>
-                  <option value="23">均衡极速 (CRF 23 推荐)</option>
-                  <option value="28">轻量审片体积 (CRF 28)</option>
+                  <option value="18">高 (大体积 · CRF 18)</option>
+                  <option value="23">中 (均衡/推荐 · CRF 23)</option>
+                  <option value="28">低 (极速小体积 · CRF 28)</option>
+                </select>
+              </div>
+              <div className="bos-wm-field-group">
+                <label className="bos-wm-label">音频与分辨率</label>
+                <select
+                  className="bos-wm-select"
+                  value={settings.size}
+                  onChange={(e: any) => updateSettings({ size: e.target.value })}
+                >
+                  <option value="original">原画分辨率 · 智能音频</option>
+                  <option value="1080p">1080P 全高清 · AAC</option>
+                  <option value="720p">720P 审片高清 · AAC</option>
+                  <option value="480p">480P 极速小样 · AAC</option>
                 </select>
               </div>
             </div>
@@ -469,9 +499,9 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
                   type="text"
                   className="bos-wm-input"
                   value={suffixDraft}
-                  placeholder="输出文件后缀，如 _watermarked"
+                  placeholder="输出文件后缀，默认 样片"
                   onChange={(e: any) => setSuffixDraft(e.target.value)}
-                  onBlur={() => updateSettings({ suffix: suffixDraft.trim() || '_watermarked' })}
+                  onBlur={() => updateSettings({ suffix: suffixDraft.trim() || '样片' })}
                 />
               </div>
             </div>
