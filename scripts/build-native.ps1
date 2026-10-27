@@ -36,5 +36,25 @@ try {
     $engineHash = (Get-FileHash -LiteralPath $engineExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $engineManifest = "{`n  `"sha256`": `"$engineHash`"`n}`n"
     [IO.File]::WriteAllText((Join-Path $engineOutDir 'engine.json'), $engineManifest, $utf8NoBom)
-    Write-Host "Native helpers built: PeriodKeeper.exe and JianYingEngine.exe ($((Get-Item $engineExe).Length) bytes)"
+
+    # 3. Compile WatermarkEngine.exe (Native Windows Media Foundation hardware-accelerated watermarker)
+    $wmOutDir = Join-Path $repoRoot 'app/build/watermark'
+    if (Test-Path -LiteralPath $wmOutDir) {
+        Remove-Item -LiteralPath $wmOutDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $wmOutDir -Force | Out-Null
+    $wmExe = Join-Path $wmOutDir 'WatermarkEngine.exe'
+    $wmSource = Join-Path $repoRoot 'app/native/WatermarkEngine.cs'
+    & $compiler /nologo /utf8output /codepage:65001 /target:exe /platform:x64 /optimize+ `
+        /r:System.Web.Extensions.dll `
+        /r:System.Drawing.dll `
+        ('/out:' + $wmExe) $wmSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $wmExe)) {
+        throw 'WatermarkEngine C# compilation failed.'
+    }
+    $wmHash = (Get-FileHash -LiteralPath $wmExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $wmManifest = "{`n  `"sha256`": `"$wmHash`"`n}`n"
+    [IO.File]::WriteAllText((Join-Path $wmOutDir 'engine.json'), $wmManifest, $utf8NoBom)
+
+    Write-Host "Native helpers built: PeriodKeeper.exe, JianYingEngine.exe ($((Get-Item $engineExe).Length) bytes), WatermarkEngine.exe ($((Get-Item $wmExe).Length) bytes)"
 } finally { Pop-Location }

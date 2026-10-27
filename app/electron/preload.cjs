@@ -8,12 +8,29 @@ contextBridge.exposeInMainWorld("blackObsidian", {
   getWebAnalysisTask: () => ipcRenderer.invoke('bos:web-analysis-status'),
   webAnalysisAction: (id, action, value) => ipcRenderer.invoke('bos:web-analysis-action', id, action, value),
   onWebAnalysisTask: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:web-analysis-task', listener); return () => ipcRenderer.removeListener('bos:web-analysis-task', listener); },
-  getWatermarkBrowsers: () => ipcRenderer.invoke('bos:watermark-browsers'),
-  openWatermarkBrowser: input => {
-    if (!Array.isArray(input?.files) || input.files.length > 100) throw new Error('请选择最多 100 个本地视频。');
-    const filePath = file => { const value = webUtils.getPathForFile(file); if (!value) throw new Error('无法读取素材原路径，请重新选择本地文件。'); return value; };
-    return ipcRenderer.invoke('bos:open-watermark-browser', { browser: input.browser, files: input.files.map(filePath), watermark: input.watermark ? filePath(input.watermark) : null, settings: input.settings });
+  getWatermarkState: () => ipcRenderer.invoke('bos:watermark:get-state'),
+  chooseWatermarkVideos: () => ipcRenderer.invoke('bos:watermark:choose-videos'),
+  addWatermarkVideos: filesOrPaths => {
+    if (!Array.isArray(filesOrPaths) || filesOrPaths.length === 0) return ipcRenderer.invoke('bos:watermark:get-state');
+    const resolved = filesOrPaths.slice(0, 200).map(item => {
+      if (typeof item === 'string') return item;
+      const p = webUtils.getPathForFile(item);
+      if (!p) throw new Error('无法读取拖入视频的本地路径，请使用选择视频按钮添加。');
+      return p;
+    });
+    return ipcRenderer.invoke('bos:watermark:add-videos', resolved);
   },
+  chooseWatermarkImage: () => ipcRenderer.invoke('bos:watermark:choose-image'),
+  chooseWatermarkOutputDir: () => ipcRenderer.invoke('bos:watermark:choose-output-dir'),
+  updateWatermarkSettings: patch => ipcRenderer.invoke('bos:watermark:update-settings', patch),
+  removeWatermarkJob: jobId => ipcRenderer.invoke('bos:watermark:remove-job', jobId),
+  clearWatermarkJobs: mode => ipcRenderer.invoke('bos:watermark:clear-jobs', mode),
+  retryWatermarkJobs: () => ipcRenderer.invoke('bos:watermark:retry-failed'),
+  startWatermarkBatch: () => ipcRenderer.invoke('bos:watermark:start'),
+  cancelWatermarkBatch: () => ipcRenderer.invoke('bos:watermark:cancel'),
+  openWatermarkPath: targetPath => ipcRenderer.invoke('bos:watermark:open-path', targetPath),
+  onWatermarkState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:watermark-state', listener); return () => ipcRenderer.removeListener('bos:watermark-state', listener); },
+  onTrayNavigate: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:tray-navigate', listener); return () => ipcRenderer.removeListener('bos:tray-navigate', listener); },
   prepareMusicDrag: input => ipcRenderer.invoke('bos:prepare-music-drag', input),
   startMusicDrag: token => ipcRenderer.send('bos:start-music-drag', token),
   onMusicDragError: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:music-drag-error', listener); return () => ipcRenderer.removeListener('bos:music-drag-error', listener); },

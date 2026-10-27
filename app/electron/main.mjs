@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
+import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -10,7 +10,7 @@ import { createMusicLibrary } from "./music-library.mjs";
 import { APP_PORT, resolveUserDataDirectory } from './profile-config.mjs';
 import { createPeriodKeeper } from './period-keeper.mjs';
 import { createMusicDrag } from './music-drag.mjs';
-import { createWatermarkBrowser } from './watermark-browser.mjs';
+import { createWatermarkHost } from './watermark-host.mjs';
 import { createJianyingHost } from './jianying-host.mjs';
 import { createQuickLaunch } from './quick-launch.mjs';
 import { createWebAIHost } from './web-ai-host.mjs';
@@ -30,7 +30,23 @@ const preloadPath = fileURLToPath(new URL("./preload.cjs", import.meta.url));
 const musicLibrary = createMusicLibrary({ settingsFile: path.join(app.getPath('userData'), 'music-library.json') });
 const periodKeeper = createPeriodKeeper(process.resourcesPath, { clipboard });
 const musicDrag = createMusicDrag({ registryFile: path.join(app.getPath('userData'), 'saved-music-files.json'), resolveLocalTrack: musicLibrary.resolve });
-const watermarkBrowser = createWatermarkBrowser({ clientDirectory: path.join(app.getAppPath(), 'dist', 'client') });
+let systemTray = null;
+const watermarkHost = createWatermarkHost({
+  appDirectory: app.getAppPath(),
+  dataDirectory: path.join(app.getPath('userData'), 'watermark'),
+  onStateChange: state => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('bos:watermark-state', state);
+    }
+    if (systemTray && !systemTray.isDestroyed()) {
+      if (state.running) {
+        systemTray.setToolTip(`XM剪辑台 · 批量水印处理中 ${state.completedCount}/${state.totalCount} (${state.overallProgress}%)`);
+      } else {
+        systemTray.setToolTip('XM剪辑台 · 视频批量水印与剪映智能工作台');
+      }
+    }
+  },
+});
 const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWindow, shell });
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
@@ -73,8 +89,76 @@ function registerLocalFileHandlers() {
   ipcMain.handle('bos:web-analysis-start', (event, request) => { fromMainWindow(event); return webAnalysis.run(request); });
   ipcMain.handle('bos:web-analysis-status', event => { fromMainWindow(event); return webAnalysis.snapshot(); });
   ipcMain.handle('bos:web-analysis-action', (event, id, action, value) => { fromMainWindow(event); return webAnalysis.action(id, action, value); });
-  ipcMain.handle('bos:watermark-browsers', event => { fromMainWindow(event); return watermarkBrowser.list(); });
-  ipcMain.handle('bos:open-watermark-browser', (event, input) => { fromMainWindow(event); return watermarkBrowser.open(input); });
+  ipcMain.handle('bos:watermark:get-state', event => { fromMainWindow(event); return watermarkHost.getState(); });
+  ipcMain.handle('bos:watermark:choose-videos', async event => {
+    fromMainWindow(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择要添加水印的视频文件（支持多选）',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'] }],
+    });
+    if (result.canceled || !result.filePaths.length) return watermarkHost.getState();
+    return watermarkHost.addVideos(result.filePaths);
+  });
+  ipcMain.handle('bos:watermark:add-videos', (event, filePaths) => {
+    fromMainWindow(event);
+    return watermarkHost.addVideos(filePaths);
+  });
+  ipcMain.handle('bos:watermark:choose-image', async event => {
+    fromMainWindow(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择水印透明 PNG / 图标文件',
+      properties: ['openFile'],
+      filters: [{ name: '图片文件', extensions: ['png', 'webp', 'bmp', 'jpg', 'jpeg'] }],
+    });
+    if (result.canceled || !result.filePaths[0]) return watermarkHost.getState();
+    return watermarkHost.updateSettings({ mode: 'image', watermarkImage: result.filePaths[0] });
+  });
+  ipcMain.handle('bos:watermark:choose-output-dir', async event => {
+    fromMainWindow(event);
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '选择水印视频输出文件夹',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled) return watermarkHost.getState();
+    return watermarkHost.updateSettings({ outputDir: result.filePaths[0] || '' });
+  });
+  ipcMain.handle('bos:watermark:update-settings', (event, patch) => {
+    fromMainWindow(event);
+    return watermarkHost.updateSettings(patch);
+  });
+  ipcMain.handle('bos:watermark:remove-job', (event, jobId) => {
+    fromMainWindow(event);
+    return watermarkHost.removeJob(jobId);
+  });
+  ipcMain.handle('bos:watermark:clear-jobs', (event, mode) => {
+    fromMainWindow(event);
+    return watermarkHost.clearJobs(mode);
+  });
+  ipcMain.handle('bos:watermark:retry-failed', event => {
+    fromMainWindow(event);
+    return watermarkHost.retryFailed();
+  });
+  ipcMain.handle('bos:watermark:start', event => {
+    fromMainWindow(event);
+    return watermarkHost.startBatch();
+  });
+  ipcMain.handle('bos:watermark:cancel', event => {
+    fromMainWindow(event);
+    return watermarkHost.cancelBatch();
+  });
+  ipcMain.handle('bos:watermark:open-path', async (event, targetPath) => {
+    fromMainWindow(event);
+    if (!targetPath || typeof targetPath !== 'string') return { ok: false };
+    const resolved = path.resolve(targetPath);
+    try {
+      shell.showItemInFolder(resolved);
+      return { ok: true };
+    } catch {
+      await shell.openPath(path.dirname(resolved));
+      return { ok: true };
+    }
+  });
   ipcMain.handle('bos:prepare-music-drag', (event, input) => { fromMainWindow(event); return musicDrag.prepare(input); });
   ipcMain.on('bos:start-music-drag', (event, token) => {
     try {
@@ -219,6 +303,41 @@ if (!hasSingleInstance) {
     await mainWindow.loadURL(`http://${APP_HOST}:${APP_PORT}/`);
   };
 
+  const focusAndNavigate = targetTab => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (targetTab) {
+        mainWindow.webContents.send('bos:tray-navigate', targetTab);
+      }
+    }
+  };
+
+  const setupSystemTray = () => {
+    try {
+      const iconPath = path.join(app.getAppPath(), "build", "app-icon.ico");
+      const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+      systemTray = new Tray(trayIcon);
+      systemTray.setToolTip("XM剪辑台 · 视频批量水印与剪映智能工作台");
+      const menu = Menu.buildFromTemplate([
+        { label: "打开 XM剪辑台", click: () => focusAndNavigate("") },
+        { type: "separator" },
+        { label: "批量水印中心（原生硬件加速）", click: () => focusAndNavigate("watermark") },
+        { label: "剪映智能工作台", click: () => focusAndNavigate("jianying") },
+        { label: "文案拆解与智能配乐", click: () => focusAndNavigate("script") },
+        { label: "剪贴板句号守护", click: () => focusAndNavigate("period") },
+        { type: "separator" },
+        { label: "检查版本更新", click: () => { focusAndNavigate(""); void autoUpdater.check?.(); } },
+        { label: "退出 XM剪辑台", click: () => app.quit() },
+      ]);
+      systemTray.setContextMenu(menu);
+      systemTray.on("click", () => focusAndNavigate(""));
+    } catch {
+      /* ignore tray errors in headless environments */
+    }
+  };
+
   app.whenReady().then(async () => {
     await musicLibrary.init();
     registerLocalFileHandlers();
@@ -231,6 +350,7 @@ if (!hasSingleInstance) {
     });
     logStartup(`local service listening on ${APP_HOST}:${APP_PORT}`);
     await createMainWindow();
+    setupSystemTray();
     logStartup("main window loaded");
     setTimeout(() => {
       void jianying.warm?.();
@@ -251,7 +371,8 @@ if (!hasSingleInstance) {
     if (!toolsStopped) {
       event.preventDefault();
       toolsStopped = true;
-      void Promise.allSettled([webAnalysis.dispose(), periodKeeper.dispose(), watermarkBrowser.dispose(), jianying.dispose(), webAI.dispose()]).finally(() => app.quit());
+      try { systemTray?.destroy(); } catch { /* ignore */ }
+      void Promise.allSettled([webAnalysis.dispose(), periodKeeper.dispose(), watermarkHost.dispose(), jianying.dispose(), webAI.dispose()]).finally(() => app.quit());
       return;
     }
     if (localServer?.listening) localServer.close();

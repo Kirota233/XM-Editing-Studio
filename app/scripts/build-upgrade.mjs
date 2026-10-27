@@ -22,7 +22,7 @@ replaceOnce('[Nl,_l]=i.useState(!1);i.useEffect', '[Nl,_l]=i.useState(!1);const 
 replaceOnce('d==="providers"&&s.jsxs("section",{className:"provider-stack"', 'd==="providers"&&s.jsx(BOSMusicUpgrade.UsageGuide,{}),d==="providers"&&s.jsxs("section",{className:"provider-stack"');
 replaceOnce('d==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T})', 'd==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T,providers:x,automation:bosAutomation})');
 replaceOnce('{id:"workspace",label:"工作空间",sub:"我的创作与灵感",Icon:P8}]', '{id:"workspace",label:"工作空间",sub:"剧本 · 配乐 · 主题",Icon:P8},{id:"watermark",label:"样片水印",sub:"本地硬件加速批处理",Icon:Ec},{id:"jianying",label:"剪映自动化",sub:"批量导出 · 字幕 · 命名",Icon:P8},{id:"webai",label:"国内 AI",sub:"DeepSeek · 豆包免 Key",Icon:P8}]');
-replaceOnce('workspace:{eyebrow:"工作空间"', 'webai:{eyebrow:"WEB AI STUDIO",title:"国内 AI 免密工作台",description:"内嵌 DeepSeek 与豆包官方网页，登录账号即可协同分析剧本与生成提示词。"},jianying:{eyebrow:"JIANYING AUTOMATION",title:"剪映自动化中枢",description:"无人值守批量导出、时间轴打散重组、SRT 智能对齐与 AI 视频归档。"},watermark:{eyebrow:"BATCH WATERMARK",title:"样片批量水印",description:"WebAV 硬件加速与离线 FFmpeg 双引擎，本机极速合成样片水印。"},workspace:{eyebrow:"WORKSPACE"');
+replaceOnce('workspace:{eyebrow:"工作空间"', 'webai:{eyebrow:"WEB AI STUDIO",title:"国内 AI 免密工作台",description:"内嵌 DeepSeek 与豆包官方网页，登录账号即可协同分析剧本与生成提示词。"},jianying:{eyebrow:"JIANYING AUTOMATION",title:"剪映自动化中枢",description:"无人值守批量导出、时间轴打散重组、SRT 智能对齐与 AI 视频归档。"},watermark:{eyebrow:"NATIVE HW WATERMARK",title:"样片批量水印",description:"基于 Windows Media Foundation 原生 C# 硬件加速引擎，无需浏览器套皮即可高速批量合成防盗水印。"},workspace:{eyebrow:"WORKSPACE"');
 replaceOnce('d==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T,providers:x,automation:bosAutomation})', 'd==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T,providers:x,automation:bosAutomation}),s.jsx(BOSMusicUpgrade.WatermarkStudio,{active:d==="watermark"}),s.jsx(BOSMusicUpgrade.JianyingStudio,{active:d==="jianying",providers:x,onNavigate:T}),s.jsx(BOSMusicUpgrade.WebAIStudio,{active:d==="webai",providers:x,automation:bosAutomation,onNavigate:T})');
 replaceOnce('className:`app-shell ${d==="chat"?"chat-open":""}`', 'className:`app-shell ${d==="chat"?"chat-open":d==="music"?"music-open":d==="webai"?"webai-open":""}`,"data-bos-theme":bosGlobalTheme');
 replaceOnce('function z3({models:d,onNavigate:T})', 'function BOSOriginalWorkspace({models:d,onNavigate:T})');
@@ -37,7 +37,7 @@ fs.writeFileSync(path.join(root, 'dist/client/assets/music-studio.js'), code);
 const railStart = code.indexOf('s.jsxs("aside",{className:"inspiration-rail"');
 const railEnd = code.indexOf(',R&&s.jsx(S3', railStart);
 if (railStart < 0 || railEnd < 0) throw new Error('Right sidebar patch location changed.');
-code = code.slice(0, railStart) + 's.jsx(BOSMusicUpgrade.TitleBar,{}),s.jsx(BOSMusicUpgrade.QuickRail,{}),s.jsx(BOSMusicUpgrade.SidebarResizer,{})' + code.slice(railEnd);
+code = code.slice(0, railStart) + 's.jsx(BOSMusicUpgrade.TitleBar,{}),s.jsx(BOSMusicUpgrade.QuickRail,{}),s.jsx(BOSMusicUpgrade.SidebarResizer,{}),s.jsx(BOSMusicUpgrade.BatchTray,{activeTab:d,onNavigate:T,automation:bosAutomation})' + code.slice(railEnd);
 fs.writeFileSync(path.join(root, 'dist/client/assets/music-studio.js'), code);
 const css = [fs.readFileSync(path.join(original, cssName), 'utf8'), fs.readFileSync(path.join(root, 'src/music-studio.css'), 'utf8'), fs.readFileSync(path.join(root, 'src/global-themes.css'), 'utf8'), fs.readFileSync(path.join(root, 'src/script-automation.css'), 'utf8')].join('\n');
 fs.writeFileSync(path.join(root, 'dist/client/assets/music-studio.css'), css);

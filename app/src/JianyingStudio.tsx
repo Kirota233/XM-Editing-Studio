@@ -75,6 +75,9 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   const connection = models.find(item => item.key === modelKey) || models[0];
   const locked = pending || state.busy || state.recording || !!state.modal;
 
+  i.useEffect(() => {
+    window.dispatchEvent(new CustomEvent('bos:jianying-state-sync', { detail: state }));
+  }, [state]);
   i.useEffect(() => { if (active) setVisited(true); }, [active]);
   i.useEffect(() => {
     if (!active || !visited || !api?.jianyingAction) return;

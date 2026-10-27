@@ -7,3 +7,4 @@ export { JianyingStudio } from './JianyingStudio.tsx';
 export { QuickRail, SidebarResizer } from './QuickRail.tsx';
 export { WebAIStudio } from './WebAIStudio.tsx';
 export { TitleBar } from './TitleBar.tsx';
+export { BatchTray } from './BatchTray.tsx';

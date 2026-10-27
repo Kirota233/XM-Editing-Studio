@@ -1,4 +1,4 @@
-﻿Unicode true
+Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
@@ -112,7 +112,7 @@ FunctionEnd
 
 !macro CHECK_APP_CLOSED PREFIX
 Function ${PREFIX}CheckAppClosed
-  nsExec::ExecToStack 'taskkill /F /IM PeriodKeeper.exe /IM JianYingEngine.exe'
+  nsExec::ExecToStack 'taskkill /F /IM PeriodKeeper.exe /IM JianYingEngine.exe /IM WatermarkEngine.exe'
   Pop $0
   Pop $0
   IfFileExists "$INSTDIR\小马剪辑台.exe" 0 appClosed
