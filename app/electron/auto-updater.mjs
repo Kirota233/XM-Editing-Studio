@@ -22,7 +22,7 @@ export function compareSemver(a, b) {
 }
 
 export function createAutoUpdater({
-  currentVersion = '1.4.0',
+  currentVersion = '1.5.0',
   repo = 'Kirota233/XM-Editing-Studio',
   downloadDirectory,
   fetcher = globalThis.fetch,

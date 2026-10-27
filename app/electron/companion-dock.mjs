@@ -1,839 +1,486 @@
-import { BrowserWindow, screen } from 'electron';
+import electron from 'electron';
+import os from 'node:os';
 
-const COMPACT_SIZE = { width: 210, height: 210 };
-const EXPANDED_SIZE = { width: 348, height: 472 };
+const { BrowserWindow, screen } = electron || {};
+
+/**
+ * 月薪喵 desktop plugin.
+ * - Orb window: transparent, always-on-top cat mascot that can dock to the Jianying window.
+ * - Panel window: separate always-on-top frosted-glass (Windows 11 acrylic) control panel that
+ *   operates Jianying automation / watermark / punctuation guard in place, like a Jianying plugin.
+ */
+const ORB_SIZE = { width: 132, height: 148 };
+const PANEL_SIZE = { width: 360, height: 584 };
+
+export function supportsAcrylic(release = os.release()) {
+  const build = Number(String(release).split('.')[2] || 0);
+  return process.platform === 'win32' && build >= 22621;
+}
+
+const SHARED_STYLE = `
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
+    font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
+  button { font: inherit; cursor: pointer; }
+`;
+
+function orbHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵</title><style>${SHARED_STYLE}
+  .stage { position: relative; width: 132px; height: 148px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .cat { position: relative; width: 96px; height: 92px; -webkit-app-region: drag; animation: bob 3.4s ease-in-out infinite; }
+  @keyframes bob { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-4px) } }
+  .ring { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; margin: -46px 0 0 -50px; transform: rotate(-90deg); pointer-events: none; }
+  .ring circle { fill: none; stroke-width: 4; }
+  .ring .bg { stroke: rgba(255,255,255,.14); }
+  .ring .fg { stroke: #ffcf6e; stroke-linecap: round; transition: stroke-dashoffset .3s ease; filter: drop-shadow(0 0 4px #ffb347); }
+  .ear { position: absolute; top: 2px; width: 30px; height: 30px; border-radius: 6px 22px 4px 22px;
+    background: linear-gradient(140deg, #ffe0b0, #ffb562); border: 2px solid #4a2f1d; transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
+  .ear::after { content: ""; position: absolute; inset: 6px; border-radius: 4px 14px 2px 14px; background: #ff9fb3; opacity: .85; }
+  .ear.l { left: 12px; transform: rotate(-12deg); }
+  .ear.r { right: 12px; transform: rotate(102deg); }
+  .cat:hover .ear.l { transform: rotate(-24deg) translateY(-2px); }
+  .cat:hover .ear.r { transform: rotate(114deg) translateY(-2px); }
+  .head { position: absolute; left: 8px; right: 8px; top: 16px; bottom: 2px; border-radius: 44% 44% 40% 40%;
+    background: radial-gradient(circle at 35% 28%, #fff4de, #ffd08a 58%, #f5a24a); border: 2px solid #4a2f1d;
+    box-shadow: 0 12px 26px rgba(0,0,0,.45), inset 0 -6px 10px rgba(201,112,32,.35); }
+  .face { position: absolute; inset: 0; -webkit-app-region: no-drag; cursor: pointer; border-radius: inherit; }
+  .stripe { position: absolute; top: 4px; width: 4px; height: 12px; border-radius: 4px; background: #d9822b; left: 50%; }
+  .stripe.a { margin-left: -9px; transform: rotate(-12deg); } .stripe.b { margin-left: -2px; } .stripe.c { margin-left: 5px; transform: rotate(12deg); }
+  .eye { position: absolute; top: 30px; width: 9px; height: 12px; border-radius: 50%; background: #2a1a10; animation: blink 4.6s infinite; }
+  .eye::after { content: ""; position: absolute; top: 2px; left: 2px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
+  .eye.l { left: 22px; } .eye.r { right: 22px; }
+  @keyframes blink { 0%,93%,97%,100% { transform: scaleY(1) } 95% { transform: scaleY(.1) } }
+  .nose { position: absolute; top: 44px; left: 50%; margin-left: -4px; width: 8px; height: 6px; border-radius: 50% 50% 60% 60%; background: #ff7d96; }
+  .mouth { position: absolute; top: 49px; left: 50%; margin-left: -9px; width: 18px; height: 8px; }
+  .mouth::before, .mouth::after { content: ""; position: absolute; top: 0; width: 9px; height: 7px; border: 2px solid #4a2f1d; border-top: 0; border-radius: 0 0 9px 9px; }
+  .mouth::before { left: 0; } .mouth::after { right: 0; }
+  .blush { position: absolute; top: 46px; width: 11px; height: 6px; border-radius: 50%; background: rgba(255,120,150,.55); }
+  .blush.l { left: 11px; } .blush.r { right: 11px; }
+  .whisker { position: absolute; top: 46px; width: 16px; height: 2px; border-radius: 2px; background: rgba(74,47,29,.6); }
+  .whisker.l1 { left: -6px; transform: rotate(8deg); } .whisker.l2 { left: -6px; top: 52px; transform: rotate(-6deg); }
+  .whisker.r1 { right: -6px; transform: rotate(-8deg); } .whisker.r2 { right: -6px; top: 52px; transform: rotate(6deg); }
+  .coin { position: absolute; right: -6px; bottom: -4px; width: 30px; height: 30px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fff3b0, #ffc93c 60%, #d99a12); border: 2px solid #7a4d07;
+    color: #7a4d07; font-size: 13px; font-weight: 900; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 10px rgba(0,0,0,.4); animation: spin 6s ease-in-out infinite; }
+  @keyframes spin { 0%,80%,100% { transform: rotateY(0) } 90% { transform: rotateY(180deg) } }
+  .tag { margin-top: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+    background: rgba(20,16,12,.78); color: #ffd58a; border: 1px solid rgba(255,207,110,.5); backdrop-filter: blur(10px);
+    -webkit-app-region: no-drag; cursor: pointer; white-space: nowrap; }
+  .stage.busy .tag { color: #1c1206; background: #ffcf6e; }
+  </style></head><body>
+  <div class="stage" id="stage">
+    <div class="cat" title="月薪喵 · 点击展开剪映插件面板，拖动耳朵可移动">
+      <svg class="ring" viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="46"/><circle class="fg" id="ring" cx="50" cy="50" r="46" stroke-dasharray="289" stroke-dashoffset="289"/></svg>
+      <div class="ear l"></div><div class="ear r"></div>
+      <div class="head">
+        <div class="face" id="face">
+          <span class="stripe a"></span><span class="stripe b"></span><span class="stripe c"></span>
+          <span class="eye l"></span><span class="eye r"></span>
+          <span class="blush l"></span><span class="blush r"></span>
+          <span class="nose"></span><span class="mouth"></span>
+          <span class="whisker l1"></span><span class="whisker l2"></span><span class="whisker r1"></span><span class="whisker r2"></span>
+        </div>
+      </div>
+      <div class="coin">薪</div>
+    </div>
+    <div class="tag" id="tag">月薪喵</div>
+  </div>
+  <script>
+    const api = window.blackObsidian;
+    const ring = document.getElementById('ring'), tag = document.getElementById('tag'), stage = document.getElementById('stage');
+    const open = () => api?.companionAction?.('panel', 'toggle');
+    document.getElementById('face').addEventListener('click', open);
+    tag.addEventListener('click', open);
+    function render(s) {
+      if (!s) return;
+      const wm = s.watermark || {}, jy = s.jianying || {};
+      const busy = wm.running || jy.busy || jy.exporting;
+      const pct = wm.running ? wm.overallProgress : (jy.exporting || jy.busy ? 60 : 0);
+      ring.style.strokeDashoffset = String(289 - 289 * Math.max(0, Math.min(100, pct)) / 100);
+      stage.className = 'stage' + (busy ? ' busy' : '');
+      tag.textContent = wm.running ? '搬砖中 ' + wm.overallProgress + '%' : jy.exporting ? '导出中…' : jy.busy ? '干活中…' : s.panelOpen ? '月薪喵 ▾' : '月薪喵';
+    }
+    api?.onCompanionState?.(render);
+    api?.companionAction?.('sync').then(render).catch(() => {});
+  </script></body></html>`;
+}
+
+function panelHtml(acrylic) {
+  const surface = acrylic ? 'rgba(18, 22, 28, 0.42)' : 'linear-gradient(160deg, rgba(28,32,40,.97), rgba(14,17,22,.98))';
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵 · 剪映插件</title><style>${SHARED_STYLE}
+  body { background: ${surface}; }
+  .wrap { height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; animation: pop .26s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
+  header { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.1); -webkit-app-region: drag; }
+  .avatar { width: 34px; height: 34px; border-radius: 12px; background: radial-gradient(circle at 35% 30%, #fff4de, #ffc777 60%, #f09a3e);
+    border: 2px solid #4a2f1d; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  header h1 { font-size: 14px; font-weight: 800; } header p { font-size: 10.5px; color: #aab3bf; margin-top: 1px; }
+  header .grow { flex: 1; min-width: 0; }
+  .icon { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(255,255,255,.06); color: #d7dde5; font-size: 12px; transition: all .15s; }
+  .icon:hover { border-color: #ffcf6e; color: #ffcf6e; }
+  .icon.on { background: rgba(255,207,110,.2); border-color: #ffcf6e; color: #ffcf6e; }
+  .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+  .scroll::-webkit-scrollbar { width: 4px } .scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 4px }
+  .card { padding: 11px 12px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 8px; transition: border-color .2s; }
+  .card.active { border-color: rgba(255,207,110,.65); }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .title { font-size: 12.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+  .meta { font-size: 11px; color: #aab3bf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
+  .dot.on { background: #8ee06b; box-shadow: 0 0 6px #8ee06b; } .dot.run { background: #ffcf6e; box-shadow: 0 0 8px #ffcf6e; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .btn { padding: 7px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.07);
+    color: #f1f4f8; font-size: 11.5px; font-weight: 650; transition: all .15s; }
+  .btn:hover:not(:disabled) { border-color: #ffcf6e; background: rgba(255,207,110,.14); transform: translateY(-1px); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn.primary { background: #ffcf6e; border-color: #ffcf6e; color: #1c1206; }
+  .btn.danger { border-color: rgba(248,113,113,.6); color: #fca5a5; }
+  .bar { height: 5px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcf6e, #ff9d5c); transition: width .25s; }
+  .log { font-size: 10.5px; color: #c4cbd4; background: rgba(0,0,0,.22); border-radius: 8px; padding: 6px 8px; line-height: 1.5;
+    max-height: 48px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
+  .jobs { display: flex; flex-direction: column; gap: 4px; }
+  .job { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d7dde5; }
+  .job span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .job b { font-weight: 600; color: #aab3bf; } .job b.done { color: #8ee06b; } .job b.err { color: #fca5a5; } .job b.run { color: #ffcf6e; }
+  .modal { border-color: #ffcf6e; background: rgba(255,207,110,.12); }
+  .modal p { font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; }
+  .switch { position: relative; width: 38px; height: 21px; border-radius: 999px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); transition: all .2s; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #e5e7eb; transition: transform .22s cubic-bezier(.34,1.56,.64,1); }
+  .switch.on { background: #ffcf6e; border-color: #ffcf6e; } .switch.on::after { transform: translateX(17px); background: #1c1206; }
+  .toast { position: fixed; left: 12px; right: 12px; bottom: 54px; padding: 8px 10px; border-radius: 10px; font-size: 11.5px;
+    background: rgba(20,16,12,.92); border: 1px solid rgba(255,207,110,.5); color: #ffe2a8; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: none; }
+  footer { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  </style></head><body><div class="wrap">
+  <header>
+    <div class="avatar">🐱</div>
+    <div class="grow"><h1>月薪喵 · 剪映插件</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
+    <button class="icon on" id="dockBtn" title="磁吸跟随剪映窗口">🧲</button>
+    <button class="icon" id="closeBtn" title="收起面板">✕</button>
+  </header>
+  <div class="scroll">
+    <div class="card modal" id="modalCard" hidden>
+      <div class="title" id="modalTitle">确认</div><p id="modalMsg"></p>
+      <div class="grid"><button class="btn" id="modalNo">取消</button><button class="btn primary" id="modalYes">确认执行</button></div>
+    </div>
+
+    <div class="card" id="jyCard">
+      <div class="row"><div class="title"><span class="dot" id="jyDot"></span>剪映自动化</div><span class="meta" id="jyMeta">就绪</span></div>
+      <div class="log" id="jyLog">等待指令…</div>
+      <div class="grid">
+        <button class="btn" id="jyScan">AI 扫描草稿</button>
+        <button class="btn primary" id="jyExport">批量导出</button>
+        <button class="btn" id="jyExtract">提取字幕</button>
+        <button class="btn danger" id="jyStop">紧急停止</button>
+      </div>
+    </div>
+
+    <div class="card" id="wmCard">
+      <div class="row"><div class="title"><span class="dot" id="wmDot"></span>批量水印</div><span class="meta" id="wmMeta">空闲</span></div>
+      <div class="bar"><i id="wmBar"></i></div>
+      <div class="jobs" id="wmJobs"></div>
+      <div class="grid">
+        <button class="btn" id="wmAdd">＋ 添加视频</button>
+        <button class="btn primary" id="wmRun">开始合成</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row"><div class="title"><span class="dot" id="pkDot"></span>剪贴板句号守护</div><button class="switch" id="pkSwitch" title="开关"></button></div>
+      <span class="meta" id="pkMeta" style="max-width:none">复制到剪映的字幕自动保留标点</span>
+    </div>
+  </div>
+  <footer>
+    <button class="btn" id="launchJy">🚀 启动剪映</button>
+    <button class="btn" id="openMain">🏠 打开主工作台</button>
+  </footer>
+  <div class="toast" id="toast"></div>
+  </div>
+  <script>
+    const api = window.blackObsidian, $ = id => document.getElementById(id);
+    let state = null, toastTimer = 0;
+    const toast = msg => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); };
+    const act = async (action, value) => {
+      try { const res = await api.companionAction(action, value); if (res && res.error) toast(res.error); else if (res) render(res); }
+      catch (e) { toast(String(e && e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); }
+    };
+    const statusText = { pending: '排队', processing: '合成中', done: '完成', error: '失败', cancelled: '取消' };
+    function render(s) {
+      if (!s) return; state = s;
+      const jy = s.jianying || {}, wm = s.watermark || {};
+      $('dockBtn').className = 'icon' + (s.autoDock ? ' on' : '');
+      $('dockLabel').textContent = s.jianyingFound ? (s.autoDock ? '✓ 已吸附剪映窗口' : '已检测到剪映') : '桌面置顶 · 剪映未运行';
+      const jyRun = jy.busy || jy.exporting || jy.recording;
+      $('jyDot').className = 'dot ' + (jyRun ? 'run' : jy.ready ? 'on' : '');
+      $('jyCard').className = 'card' + (jyRun ? ' active' : '');
+      $('jyMeta').textContent = jy.status || '就绪';
+      $('jyLog').textContent = jy.lastLog || jy.guide || '等待指令…';
+      $('jyScan').disabled = jyRun || !jy.ready;
+      $('jyExport').disabled = jyRun || !jy.ready || !jy.queueCount;
+      $('jyExport').textContent = jy.queueCount ? '批量导出 (' + jy.queueCount + ')' : '批量导出';
+      $('jyExtract').disabled = jyRun || !jy.ready;
+      const m = jy.modal;
+      $('modalCard').hidden = !m;
+      if (m) { $('modalTitle').textContent = m.title || '确认'; $('modalMsg').textContent = m.message || ''; }
+      $('wmDot').className = 'dot ' + (wm.running ? 'run' : wm.totalCount ? 'on' : '');
+      $('wmCard').className = 'card' + (wm.running ? ' active' : '');
+      $('wmMeta').textContent = wm.totalCount ? wm.completedCount + '/' + wm.totalCount + ' · ' + wm.overallProgress + '%' : '空闲';
+      $('wmBar').style.width = (wm.overallProgress || 0) + '%';
+      $('wmRun').textContent = wm.running ? '停止合成' : '开始合成';
+      $('wmRun').className = 'btn ' + (wm.running ? 'danger' : 'primary');
+      $('wmRun').disabled = !wm.running && !(wm.jobs || []).some(j => j.status !== 'done' && j.status !== 'processing');
+      $('wmJobs').innerHTML = '';
+      (wm.jobs || []).slice(-4).forEach(j => {
+        const row = document.createElement('div'); row.className = 'job';
+        const name = document.createElement('span'); name.textContent = j.fileName; name.title = j.outputPath || '';
+        const st = document.createElement('b');
+        st.className = j.status === 'done' ? 'done' : j.status === 'error' ? 'err' : j.status === 'processing' ? 'run' : '';
+        st.textContent = j.status === 'processing' ? j.progress + '%' : statusText[j.status] || j.status;
+        row.append(name, st);
+        if (j.status === 'done') { row.style.cursor = 'pointer'; row.title = '点击定位成片'; row.onclick = () => act('wm-open', j.outputPath); }
+        $('wmJobs').append(row);
+      });
+      $('pkSwitch').className = 'switch' + (s.periodEnabled ? ' on' : '');
+      $('pkDot').className = 'dot ' + (s.periodEnabled ? 'on' : '');
+      $('pkMeta').textContent = s.periodEnabled ? '✓ 守护中：复制字幕到剪映自动保留句号' : '已关闭：开启后复制到剪映的字幕自动保留标点';
+    }
+    $('closeBtn').onclick = () => act('panel', false);
+    $('dockBtn').onclick = () => act('toggle-dock');
+    $('jyScan').onclick = () => act('jy-scan');
+    $('jyExport').onclick = () => act('jy-export');
+    $('jyExtract').onclick = () => act('jy-extract');
+    $('jyStop').onclick = () => act('jy-stop');
+    $('modalYes').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: true });
+    $('modalNo').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: false });
+    $('wmAdd').onclick = () => act('wm-add');
+    $('wmRun').onclick = () => act(state?.watermark?.running ? 'wm-cancel' : 'wm-start');
+    $('pkSwitch').onclick = () => act('toggle-period');
+    $('launchJy').onclick = () => act('launch-jy');
+    $('openMain').onclick = () => act('navigate', '');
+    api?.onCompanionState?.(render);
+    act('sync');
+  </script></body></html>`;
+}
+
+// Base64 keeps Chromium's data-URL parser away from percent-encoding edge cases in the inline markup.
+const toDataUrl = html => 'data:text/html;charset=utf-8;base64,' + Buffer.from(html, 'utf8').toString('base64');
+
+function companionHtml() {
+  const orb = orbHtml();
+  const panelAcrylic = panelHtml(true);
+  const panelSolid = panelHtml(false);
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵 · 剪映插件</title></head><body style="margin:0;background:transparent;overflow:hidden"><script>
+    (function () {
+      var params = new URLSearchParams(location.search);
+      var mode = params.get('mode') === 'panel' ? 'panel' : 'orb';
+      var acrylic = params.get('acrylic') !== '0';
+      var html = mode === 'panel' ? (acrylic ? ${JSON.stringify(panelAcrylic)} : ${JSON.stringify(panelSolid)}) : ${JSON.stringify(orb)};
+      document.open();
+      document.write(html);
+      document.close();
+    })();
+  </script></body></html>`;
+}
+
+/** Exposed for offscreen previews, static bundling, and tests. */
+export const companionMarkup = { orbHtml, panelHtml, companionHtml, toDataUrl };
 
 export function createCompanionDock({
   preloadPath,
   iconPath,
+  baseUrl = '',
   getJianyingState,
   getWatermarkState,
   getPeriodStatus,
   onAction,
 }) {
-  let win = null;
-  let expanded = false;
+  let orb = null;
+  let panel = null;
+  let panelOpen = false;
   let autoDock = true;
   let visible = false;
   let pollTimer = null;
-  let manualPosition = null;
+  let lastJianying = null;
+  const acrylic = supportsAcrylic();
+  const normalizedBaseUrl = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
+  const resolveOrbUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion.html?mode=orb` : toDataUrl(orbHtml());
+  const resolvePanelUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion.html?mode=panel&acrylic=${acrylic ? '1' : '0'}` : toDataUrl(panelHtml(acrylic));
 
-  function buildCompanionHtml() {
-    const html = `<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<title>XM 灵动伴侣悬浮窗</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-  html, body {
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: transparent;
-    font-family: "Segoe UI Variable Display", "Microsoft YaHei UI", system-ui, sans-serif;
-    color: #f4f7f5;
-  }
-  .root {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 8px;
-  }
+  const webPreferences = { contextIsolation: true, nodeIntegration: false, sandbox: true, devTools: false, preload: preloadPath };
+  const alive = w => w && !w.isDestroyed();
 
-  /* =========================================================
-     Compact Mode: Cute Frosted-Glass Mascot + Radial Satellites
-     ========================================================= */
-  .radial-stage {
-    position: relative;
-    width: 194px;
-    height: 194px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .root.is-expanded .radial-stage {
-    display: none;
-  }
-
-  /* Surrounding Radial Satellite Nodes */
-  .sat {
-    position: absolute;
-    width: 44px;
-    height: 44px;
-    border-radius: 14px;
-    border: 1px solid rgba(255, 255, 255, 0.24);
-    background: linear-gradient(145deg, rgba(24, 32, 38, 0.82), rgba(12, 16, 20, 0.9));
-    backdrop-filter: blur(18px) saturate(190%);
-    box-shadow:
-      0 8px 20px rgba(0, 0, 0, 0.45),
-      inset 0 1px 0 rgba(255, 255, 255, 0.25);
-    color: #f1f5f9;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1px;
-    cursor: pointer;
-    -webkit-app-region: no-drag;
-    transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 180ms ease, background 180ms ease;
-    z-index: 2;
-  }
-  .sat i {
-    font-style: normal;
-    font-size: 13px;
-    line-height: 1;
-  }
-  .sat span {
-    font-size: 9px;
-    font-weight: 700;
-    color: #cbd5e1;
-  }
-  .sat.active {
-    border-color: #c5f54f;
-    background: linear-gradient(145deg, rgba(197, 245, 79, 0.26), rgba(15, 23, 42, 0.92));
-  }
-  .sat.active span {
-    color: #c5f54f;
-  }
-  /* 4 Cardinal/Diagonal Radial Positions around Center Orb */
-  .sat-top    { transform: translate(0px, -68px); }
-  .sat-left   { transform: translate(-68px, 0px); }
-  .sat-right  { transform: translate(68px, 0px); }
-  .sat-bottom { transform: translate(0px, 68px); }
-
-  .sat-top:hover    { transform: translate(0px, -72px) scale(1.08); border-color: #c5f54f; }
-  .sat-left:hover   { transform: translate(-72px, 0px) scale(1.08); border-color: #c5f54f; }
-  .sat-right:hover  { transform: translate(72px, 0px) scale(1.08); border-color: #c5f54f; }
-  .sat-bottom:hover { transform: translate(0px, 72px) scale(1.08); border-color: #c5f54f; }
-
-  /* Center Cute Mascot Pet */
-  .mascot-wrap {
-    position: relative;
-    width: 76px;
-    height: 76px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    -webkit-app-region: drag;
-    animation: floatBob 3.2s ease-in-out infinite;
-    z-index: 4;
-  }
-  @keyframes floatBob {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-4px); }
-  }
-  .mascot-halo {
-    position: absolute;
-    inset: 2px;
-    border-radius: 26px;
-    background: radial-gradient(circle at 30% 20%, rgba(197, 245, 79, 0.38), rgba(56, 189, 248, 0.22) 60%, rgba(15, 23, 42, 0.88));
-    backdrop-filter: blur(22px) saturate(195%);
-    border: 1.5px solid rgba(255, 255, 255, 0.3);
-    box-shadow:
-      0 12px 28px rgba(0, 0, 0, 0.52),
-      inset 0 1px 1px rgba(255, 255, 255, 0.38);
-    transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 200ms ease;
-  }
-  .mascot-wrap:hover .mascot-halo {
-    transform: scale(1.06);
-    border-color: rgba(197, 245, 79, 0.85);
-  }
-  .ear {
-    position: absolute;
-    top: -4px;
-    width: 18px;
-    height: 18px;
-    border-radius: 6px 14px 4px 12px;
-    background: linear-gradient(135deg, rgba(197, 245, 79, 0.9), rgba(56, 189, 248, 0.6));
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    z-index: 0;
-    transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  .ear.left { left: 10px; transform: rotate(-18deg); }
-  .ear.right { right: 10px; transform: rotate(28deg) scaleX(-1); }
-  .mascot-wrap:hover .ear.left { transform: rotate(-30deg) translateY(-2px); }
-  .mascot-wrap:hover .ear.right { transform: rotate(40deg) scaleX(-1) translateY(-2px); }
-
-  .face {
-    position: relative;
-    z-index: 2;
-    width: 50px;
-    height: 40px;
-    border-radius: 16px;
-    background: rgba(11, 15, 19, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 5px;
-    -webkit-app-region: no-drag;
-  }
-  .eyes {
-    display: flex;
-    gap: 11px;
-    align-items: center;
-  }
-  .eye {
-    width: 6.5px;
-    height: 8.5px;
-    border-radius: 999px;
-    background: #c5f54f;
-    box-shadow: 0 0 8px rgba(197, 245, 79, 0.85);
-    animation: blink 4s infinite;
-  }
-  @keyframes blink {
-    0%, 94%, 98%, 100% { transform: scaleY(1); }
-    96% { transform: scaleY(0.12); }
-  }
-  .blush {
-    position: absolute;
-    top: 21px;
-    width: 7px;
-    height: 4px;
-    border-radius: 999px;
-    background: rgba(244, 114, 182, 0.6);
-  }
-  .blush.left { left: 6px; }
-  .blush.right { right: 6px; }
-  .mouth {
-    width: 9px;
-    height: 4.5px;
-    border-bottom: 2px solid #e2e8f0;
-    border-radius: 0 0 999px 999px;
-  }
-  .badge {
-    position: absolute;
-    bottom: -3px;
-    padding: 1px 7px;
-    border-radius: 999px;
-    font-size: 9.5px;
-    font-weight: 700;
-    background: rgba(15, 23, 42, 0.92);
-    color: #c5f54f;
-    border: 1px solid rgba(197, 245, 79, 0.5);
-    z-index: 3;
-    -webkit-app-region: no-drag;
-  }
-
-  /* =========================================================
-     Expanded Mode: Frosted Glass Companion Control Panel
-     ========================================================= */
-  .glass-panel {
-    display: none;
-    width: 100%;
-    height: 100%;
-    border-radius: 22px;
-    background: linear-gradient(155deg, rgba(22, 29, 35, 0.82) 0%, rgba(10, 14, 18, 0.9) 100%);
-    backdrop-filter: blur(28px) saturate(195%);
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    box-shadow:
-      0 22px 54px rgba(0, 0, 0, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.28);
-    padding: 14px;
-    flex-direction: column;
-    gap: 10px;
-    animation: panelPop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  .root.is-expanded .glass-panel {
-    display: flex;
-  }
-  @keyframes panelPop {
-    from { opacity: 0; transform: scale(0.84) translateY(-8px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-  .panel-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-    -webkit-app-region: drag;
-  }
-  .head-left {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-  }
-  .mini-pet {
-    width: 30px;
-    height: 30px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, rgba(197, 245, 79, 0.3), rgba(56, 189, 248, 0.25));
-    border: 1px solid rgba(197, 245, 79, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 15px;
-  }
-  .head-title h4 {
-    font-size: 13px;
-    font-weight: 700;
-    color: #f8fafc;
-  }
-  .head-title p {
-    font-size: 10.5px;
-    color: #94a3b8;
-  }
-  .head-btns {
-    display: flex;
-    gap: 5px;
-    -webkit-app-region: no-drag;
-  }
-  .icon-btn {
-    width: 26px;
-    height: 26px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.07);
-    color: #cbd5e1;
-    cursor: pointer;
-    font-size: 12px;
-    transition: all 150ms ease;
-  }
-  .icon-btn:hover {
-    border-color: #c5f54f;
-    color: #c5f54f;
-    transform: translateY(-1px);
-  }
-
-  .dock-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 7px 10px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    font-size: 11.5px;
-  }
-  .dock-status {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #64748b;
-  }
-  .dot.on {
-    background: #c5f54f;
-    box-shadow: 0 0 8px #c5f54f;
-  }
-  .pill-toggle {
-    padding: 3px 9px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.08);
-    color: #e2e8f0;
-    font-size: 10.5px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .pill-toggle.active {
-    background: rgba(197, 245, 79, 0.24);
-    border-color: #c5f54f;
-    color: #c5f54f;
-  }
-
-  .card {
-    padding: 10px 11px;
-    border-radius: 14px;
-    background: rgba(255, 255, 255, 0.055);
-    border: 1px solid rgba(255, 255, 255, 0.11);
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-  }
-  .card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 12px;
-  }
-  .card-top span {
-    font-size: 11px;
-    color: #94a3b8;
-  }
-  .progress {
-    height: 5px;
-    border-radius: 999px;
-    background: rgba(0, 0, 0, 0.4);
-    overflow: hidden;
-  }
-  .progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, #c5f54f, #38bdf8);
-    transition: width 220ms ease;
-  }
-  .btn-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-  .act-btn {
-    padding: 7px 9px;
-    border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.07);
-    color: #f1f5f9;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 160ms ease;
-  }
-  .act-btn:hover {
-    border-color: #c5f54f;
-    background: rgba(197, 245, 79, 0.16);
-    transform: translateY(-1px);
-  }
-  .act-btn.primary {
-    background: #c5f54f;
-    border-color: #c5f54f;
-    color: #090b0c;
-  }
-  .footer-bar {
-    margin-top: auto;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-  }
-</style>
-</head>
-<body>
-  <div id="root" class="root">
-    <!-- Compact Mode: Cute Mascot + 4 Surrounding Radial Satellites -->
-    <div class="radial-stage">
-      <button id="sat-wm" class="sat sat-top" title="批量样片水印">
-        <i>💧</i>
-        <span id="sat-wm-txt">水印</span>
-      </button>
-      <button id="sat-jy" class="sat sat-left" title="剪映批量自动化">
-        <i>🎬</i>
-        <span>剪映</span>
-      </button>
-      <button id="sat-script" class="sat sat-right" title="剧本与配乐工作台">
-        <i>🎵</i>
-        <span>配乐</span>
-      </button>
-      <button id="sat-period" class="sat sat-bottom" title="一键切换剪贴板句号守护">
-        <i>🛡️</i>
-        <span id="sat-period-txt">句号</span>
-      </button>
-
-      <div id="mascot" class="mascot-wrap" title="点击展开毛玻璃控制面板 · 按住光环可随意拖动">
-        <div class="ear left"></div>
-        <div class="ear right"></div>
-        <div class="mascot-halo"></div>
-        <div id="mascot-face" class="face">
-          <div class="eyes">
-            <div class="eye"></div>
-            <div class="eye"></div>
-          </div>
-          <div class="blush left"></div>
-          <div class="blush right"></div>
-          <div class="mouth"></div>
-        </div>
-        <div id="mascot-badge" class="badge">灵动球</div>
-      </div>
-    </div>
-
-    <!-- Expanded Frosted Glass Panel -->
-    <div class="glass-panel">
-      <div class="panel-head">
-        <div class="head-left">
-          <div class="mini-pet">🐾</div>
-          <div class="head-title">
-            <h4>XM 桌面灵动伴侣</h4>
-            <p id="jy-window-label">独立桌面悬浮 · 支持剪映磁吸</p>
-          </div>
-        </div>
-        <div class="head-btns">
-          <button id="btn-collapse" class="icon-btn" title="收起为可爱悬浮球">−</button>
-          <button id="btn-hide" class="icon-btn" title="最小化到系统托盘">✕</button>
-        </div>
-      </div>
-
-      <div class="dock-bar">
-        <div class="dock-status">
-          <span id="dock-dot" class="dot on"></span>
-          <span id="dock-text">磁吸跟随剪映窗口</span>
-        </div>
-        <button id="btn-toggle-dock" class="pill-toggle active">磁吸已开</button>
-      </div>
-
-      <div class="card">
-        <div class="card-top">
-          <strong>🎬 剪映自动化伴侣</strong>
-          <span id="jy-meta">就绪</span>
-        </div>
-        <div class="btn-grid">
-          <button id="btn-jy-scan" class="act-btn">扫描剪映草稿</button>
-          <button id="btn-jy-open" class="act-btn">进入剪映中枢</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-top">
-          <strong>💧 原生硬件批量水印</strong>
-          <span id="wm-meta">空闲</span>
-        </div>
-        <div class="progress">
-          <div id="wm-bar" class="progress-fill"></div>
-        </div>
-        <div class="btn-grid">
-          <button id="btn-wm-add" class="act-btn">+ 快速选视频</button>
-          <button id="btn-wm-start" class="act-btn primary">开始合成</button>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-top">
-          <strong>🛡️ 剪贴板句号守护</strong>
-          <span id="period-meta">已关闭</span>
-        </div>
-        <div class="btn-grid">
-          <button id="btn-period-toggle" class="act-btn">切换句号守护</button>
-          <button id="btn-webai-open" class="act-btn">✨ 国内 AI 台</button>
-        </div>
-      </div>
-
-      <div class="footer-bar">
-        <button id="btn-launch-jy" class="act-btn">🚀 启动剪映</button>
-        <button id="btn-focus-main" class="act-btn primary">🏠 打开主工作台</button>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    const api = window.blackObsidian;
-    const rootEl = document.getElementById('root');
-    const badgeEl = document.getElementById('mascot-badge');
-    const satWm = document.getElementById('sat-wm');
-    const satWmTxt = document.getElementById('sat-wm-txt');
-    const satPeriod = document.getElementById('sat-period');
-    const satPeriodTxt = document.getElementById('sat-period-txt');
-    const jyWindowLabel = document.getElementById('jy-window-label');
-    const dockDot = document.getElementById('dock-dot');
-    const dockText = document.getElementById('dock-text');
-    const btnToggleDock = document.getElementById('btn-toggle-dock');
-    const jyMeta = document.getElementById('jy-meta');
-    const wmMeta = document.getElementById('wm-meta');
-    const wmBar = document.getElementById('wm-bar');
-    const periodMeta = document.getElementById('period-meta');
-
-    function renderState(s) {
-      if (!s) return;
-      if (s.expanded) {
-        rootEl.classList.add('is-expanded');
-      } else {
-        rootEl.classList.remove('is-expanded');
-      }
-      const autoDock = Boolean(s.autoDock);
-      dockDot.className = 'dot ' + (autoDock ? 'on' : '');
-      btnToggleDock.className = 'pill-toggle ' + (autoDock ? 'active' : '');
-      btnToggleDock.textContent = autoDock ? '磁吸已开' : '自由悬浮';
-      if (s.jianyingFound) {
-        jyWindowLabel.textContent = autoDock ? '✓ 已吸附剪映窗口右上角' : '已检测到剪映运行中';
-        dockText.textContent = '剪映窗口已连接';
-      } else {
-        jyWindowLabel.textContent = '独立桌面悬浮 · 支持剪映磁吸';
-        dockText.textContent = autoDock ? '等待剪映启动自动吸附' : '桌面自由拖动模式';
-      }
-
-      const wm = s.watermark || {};
-      if (wm.running) {
-        badgeEl.textContent = wm.overallProgress + '%';
-        satWm.className = 'sat sat-top active';
-        satWmTxt.textContent = wm.overallProgress + '%';
-        wmMeta.textContent = wm.completedCount + '/' + wm.totalCount + ' (' + wm.overallProgress + '%)';
-        wmBar.style.width = wm.overallProgress + '%';
-      } else if (wm.totalCount > 0) {
-        badgeEl.textContent = wm.completedCount + '/' + wm.totalCount;
-        satWm.className = 'sat sat-top active';
-        satWmTxt.textContent = wm.completedCount + '/' + wm.totalCount;
-        wmMeta.textContent = '队列 ' + wm.completedCount + '/' + wm.totalCount;
-        wmBar.style.width = wm.overallProgress + '%';
-      } else {
-        badgeEl.textContent = s.periodEnabled ? '守护中' : '灵动球';
-        satWm.className = 'sat sat-top';
-        satWmTxt.textContent = '水印';
-        wmMeta.textContent = '空闲';
-        wmBar.style.width = '0%';
-      }
-
-      satPeriod.className = 'sat sat-bottom ' + (s.periodEnabled ? 'active' : '');
-      satPeriodTxt.textContent = s.periodEnabled ? '守护开' : '句号';
-      jyMeta.textContent = s.jianyingStatus || '就绪';
-      periodMeta.textContent = s.periodEnabled ? '✓ 守护已开启' : '已关闭';
-    }
-
-    document.getElementById('mascot-face').addEventListener('click', () => {
-      api?.companionAction?.('expand', true);
-    });
-    document.getElementById('mascot-badge').addEventListener('click', () => {
-      api?.companionAction?.('expand', true);
-    });
-    document.getElementById('sat-wm').addEventListener('click', () => {
-      api?.companionAction?.('navigate', 'watermark');
-    });
-    document.getElementById('sat-jy').addEventListener('click', () => {
-      api?.companionAction?.('navigate', 'jianying');
-    });
-    document.getElementById('sat-script').addEventListener('click', () => {
-      api?.companionAction?.('navigate', 'workspace');
-    });
-    document.getElementById('sat-period').addEventListener('click', () => {
-      api?.companionAction?.('toggle-period');
-    });
-
-    document.getElementById('btn-collapse').addEventListener('click', () => {
-      api?.companionAction?.('expand', false);
-    });
-    document.getElementById('btn-hide').addEventListener('click', () => {
-      api?.companionAction?.('hide');
-    });
-    btnToggleDock.addEventListener('click', () => {
-      api?.companionAction?.('toggle-dock');
-    });
-    document.getElementById('btn-jy-scan').addEventListener('click', () => {
-      api?.companionAction?.('jy-scan');
-    });
-    document.getElementById('btn-jy-open').addEventListener('click', () => {
-      api?.companionAction?.('navigate', 'jianying');
-    });
-    document.getElementById('btn-wm-add').addEventListener('click', () => {
-      api?.companionAction?.('wm-add');
-    });
-    document.getElementById('btn-wm-start').addEventListener('click', () => {
-      api?.companionAction?.('wm-start');
-    });
-    document.getElementById('btn-period-toggle').addEventListener('click', () => {
-      api?.companionAction?.('toggle-period');
-    });
-    document.getElementById('btn-webai-open').addEventListener('click', () => {
-      api?.companionAction?.('navigate', 'webai');
-    });
-    document.getElementById('btn-launch-jy').addEventListener('click', () => {
-      api?.companionAction?.('launch-jy');
-    });
-    document.getElementById('btn-focus-main').addEventListener('click', () => {
-      api?.companionAction?.('navigate', '');
-    });
-
-    api?.onCompanionState?.(renderState);
-    api?.companionAction?.('sync').then(renderState).catch(() => {});
-  </script>
-</body>
-</html>`;
-    return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
-  }
-
-  function currentSize() {
-    return expanded ? EXPANDED_SIZE : COMPACT_SIZE;
-  }
-
-  function defaultScreenPosition(size) {
+  function workArea(point) {
     try {
-      const display = screen.getPrimaryDisplay();
-      const workArea = display.workArea;
-      return {
-        x: workArea.x + workArea.width - size.width - 24,
-        y: workArea.y + workArea.height - size.height - 36,
-      };
+      return (point ? screen.getDisplayNearestPoint(point) : screen.getPrimaryDisplay()).workArea;
     } catch {
-      return { x: 1180, y: 620 };
+      return { x: 0, y: 0, width: 1920, height: 1040 };
     }
   }
 
-  async function buildStateSnapshot() {
-    let jy = null;
-    let wm = null;
-    let period = null;
-    try { jy = await getJianyingState?.(); } catch { /* ignore */ }
+  async function ensureOrb() {
+    if (alive(orb)) return orb;
+    const area = workArea();
+    orb = new BrowserWindow({
+      x: area.x + area.width - ORB_SIZE.width - 24,
+      y: area.y + area.height - ORB_SIZE.height - 28,
+      ...ORB_SIZE,
+      frame: false, transparent: true, resizable: false, maximizable: false, minimizable: false, fullscreenable: false,
+      skipTaskbar: true, alwaysOnTop: true, hasShadow: false, focusable: true, icon: iconPath,
+      webPreferences,
+    });
+    orb.setAlwaysOnTop(true, 'screen-saver');
+    orb.on('move', () => placePanel());
+    orb.on('closed', () => { orb = null; visible = false; });
+    try {
+      await orb.loadURL(resolveOrbUrl());
+    } catch {
+      if (alive(orb)) await orb.loadURL(toDataUrl(orbHtml()));
+    }
+    return orb;
+  }
+
+  async function ensurePanel() {
+    if (alive(panel)) return panel;
+    panel = new BrowserWindow({
+      ...PANEL_SIZE,
+      show: false, frame: false, resizable: false, maximizable: false, minimizable: false, fullscreenable: false,
+      skipTaskbar: true, alwaysOnTop: true, icon: iconPath, roundedCorners: true,
+      // Windows 11: real desktop acrylic blur behind the panel; older systems fall back to a solid glass tint.
+      ...(acrylic ? { backgroundMaterial: 'acrylic', backgroundColor: '#00000000' } : { backgroundColor: '#14181e' }),
+      webPreferences,
+    });
+    panel.setAlwaysOnTop(true, 'screen-saver');
+    panel.on('closed', () => { panel = null; panelOpen = false; });
+    try {
+      await panel.loadURL(resolvePanelUrl());
+    } catch {
+      if (alive(panel)) await panel.loadURL(toDataUrl(panelHtml(acrylic)));
+    }
+    return panel;
+  }
+
+  function placePanel() {
+    if (!alive(panel) || !alive(orb) || !panelOpen) return;
+    const [ox, oy] = orb.getPosition();
+    const area = workArea({ x: ox, y: oy });
+    let x = ox - PANEL_SIZE.width - 8;
+    if (x < area.x) x = ox + ORB_SIZE.width + 8;
+    let y = oy + ORB_SIZE.height - PANEL_SIZE.height;
+    y = Math.max(area.y + 8, Math.min(y, area.y + area.height - PANEL_SIZE.height - 8));
+    x = Math.max(area.x + 8, Math.min(x, area.x + area.width - PANEL_SIZE.width - 8));
+    panel.setBounds({ x: Math.round(x), y: Math.round(y), ...PANEL_SIZE }, false);
+  }
+
+  async function snapshot() {
+    let jy = null, wm = null, period = null;
+    try { jy = await getJianyingState?.(); } catch { jy = lastJianying; }
+    if (jy) lastJianying = jy;
     try { wm = await getWatermarkState?.(); } catch { /* ignore */ }
     try { period = await getPeriodStatus?.(); } catch { /* ignore */ }
-
     const jw = jy?.jianyingWindow || {};
+    const logs = Array.isArray(jy?.logs) ? jy.logs : [];
     return {
-      visible,
-      expanded,
-      autoDock,
+      visible, panelOpen, autoDock, acrylic,
       jianyingFound: Boolean(jw.found && !jw.minimized),
       jianyingWindow: jw,
-      jianyingStatus: jy?.status || '就绪',
-      watermark: wm || { running: false, totalCount: 0, completedCount: 0, overallProgress: 0 },
+      jianying: {
+        ready: Boolean(jy?.ready), busy: Boolean(jy?.busy), exporting: Boolean(jy?.exporting), recording: Boolean(jy?.recording),
+        status: jy?.status || '引擎预热中…', guide: jy?.guide || '', modal: jy?.modal || null,
+        queueCount: Array.isArray(jy?.queue) ? jy.queue.length : 0,
+        lastLog: logs.length ? String(logs[logs.length - 1]) : '',
+      },
+      watermark: wm || { running: false, totalCount: 0, completedCount: 0, overallProgress: 0, jobs: [] },
       periodEnabled: Boolean(period?.enabled),
     };
   }
 
   async function broadcastState() {
-    const snap = await buildStateSnapshot();
-    if (win && !win.isDestroyed()) {
-      win.webContents.send('bos:companion-state', snap);
-    }
+    const snap = await snapshot();
+    for (const w of [orb, panel]) if (alive(w)) w.webContents.send('bos:companion-state', snap);
     return snap;
   }
 
-  async function updateDockPosition() {
-    if (!win || win.isDestroyed() || !visible) return;
+  async function tick() {
+    if (!visible || !alive(orb)) return;
     const snap = await broadcastState();
-    if (!autoDock) return;
     const jw = snap.jianyingWindow;
-    if (jw && jw.found && !jw.minimized && jw.width > 200 && jw.height > 200) {
-      const size = currentSize();
-      const targetX = Math.max(0, jw.x + jw.width - size.width - 14);
-      const targetY = Math.max(0, jw.y + 42);
-      const [curX, curY] = win.getPosition();
-      if (Math.abs(curX - targetX) > 4 || Math.abs(curY - targetY) > 4) {
-        win.setBounds({ x: targetX, y: targetY, width: size.width, height: size.height }, false);
-      }
+    if (autoDock && jw?.found && !jw.minimized && jw.width > 300 && jw.height > 300) {
+      const x = jw.x + jw.width - ORB_SIZE.width - 16;
+      const y = jw.y + 44;
+      const [cx, cy] = orb.getPosition();
+      if (Math.abs(cx - x) > 3 || Math.abs(cy - y) > 3) orb.setPosition(Math.round(x), Math.round(y), false);
     }
   }
 
-  async function ensureWindow() {
-    if (win && !win.isDestroyed()) return win;
-    const size = currentSize();
-    const pos = manualPosition || defaultScreenPosition(size);
-    win = new BrowserWindow({
-      x: pos.x,
-      y: pos.y,
-      width: size.width,
-      height: size.height,
-      frame: false,
-      transparent: true,
-      resizable: false,
-      maximizable: false,
-      minimizable: false,
-      fullscreenable: false,
-      skipTaskbar: true,
-      alwaysOnTop: true,
-      hasShadow: false,
-      icon: iconPath,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-        devTools: false,
-        preload: preloadPath,
-      },
-    });
-    win.setAlwaysOnTop(true, 'floating');
-    win.on('moved', () => {
-      if (!win || win.isDestroyed()) return;
-      const [x, y] = win.getPosition();
-      manualPosition = { x, y };
-    });
-    win.on('closed', () => {
-      win = null;
-      visible = false;
-    });
-    await win.loadURL(buildCompanionHtml());
-    return win;
+  function startLoop() {
+    if (!pollTimer) pollTimer = setInterval(() => { void tick(); }, 1200);
+  }
+  function stopLoop() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
   }
 
-  function startDockLoop() {
-    if (pollTimer) return;
-    pollTimer = setInterval(() => {
-      void updateDockPosition();
-    }, 1800);
-  }
-
-  function stopDockLoop() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
+  async function setPanel(open) {
+    panelOpen = open === 'toggle' ? !panelOpen : Boolean(open);
+    if (panelOpen) {
+      const p = await ensurePanel();
+      placePanel();
+      p.showInactive();
+      p.focus();
+    } else if (alive(panel)) {
+      panel.hide();
     }
+    return broadcastState();
   }
 
-  async function show(expandPanel = false) {
-    expanded = Boolean(expandPanel);
+  async function show(openPanel = false) {
     visible = true;
-    const w = await ensureWindow();
-    const size = currentSize();
-    const [curX, curY] = w.getPosition();
-    w.setBounds({ x: curX, y: curY, width: size.width, height: size.height }, false);
-    w.showInactive();
-    startDockLoop();
-    return await broadcastState();
+    const o = await ensureOrb();
+    o.showInactive();
+    startLoop();
+    if (openPanel) await setPanel(true);
+    return broadcastState();
   }
 
   async function hide() {
     visible = false;
-    stopDockLoop();
-    if (win && !win.isDestroyed()) {
-      win.hide();
-    }
-    return await buildStateSnapshot();
+    stopLoop();
+    if (alive(panel)) panel.hide();
+    panelOpen = false;
+    if (alive(orb)) orb.hide();
+    return snapshot();
   }
 
   async function toggle() {
-    if (visible && win && !win.isDestroyed() && win.isVisible()) {
-      return await hide();
-    }
-    return await show(false);
-  }
-
-  async function setExpanded(nextExpanded) {
-    const prevSize = currentSize();
-    expanded = Boolean(nextExpanded);
-    const nextSize = currentSize();
-    if (win && !win.isDestroyed()) {
-      const [curX, curY] = win.getPosition();
-      const nextX = Math.max(8, curX + (prevSize.width - nextSize.width));
-      const nextY = Math.max(8, curY + (prevSize.height - nextSize.height));
-      win.setBounds({ x: nextX, y: nextY, width: nextSize.width, height: nextSize.height }, false);
-    }
-    return await broadcastState();
+    return visible && alive(orb) && orb.isVisible() ? hide() : show(false);
   }
 
   async function handleAction(action, value) {
-    if (action === 'sync') {
-      return await broadcastState();
+    if (action === 'sync') return broadcastState();
+    if (action === 'show') return show(Boolean(value));
+    if (action === 'hide') return hide();
+    if (action === 'toggle') return toggle();
+    if (action === 'panel' || action === 'expand') return setPanel(value);
+    if (action === 'toggle-dock') { autoDock = !autoDock; await tick(); return broadcastState(); }
+    try {
+      await onAction?.(action, value);
+    } catch (error) {
+      const snap = await broadcastState();
+      return { ...snap, error: String(error?.message || error || '操作失败').replace(/^Error:\s*/, '') };
     }
-    if (action === 'show') {
-      return await show(Boolean(value));
-    }
-    if (action === 'hide') {
-      return await hide();
-    }
-    if (action === 'toggle') {
-      return await toggle();
-    }
-    if (action === 'expand') {
-      return await setExpanded(Boolean(value));
-    }
-    if (action === 'toggle-dock') {
-      autoDock = !autoDock;
-      if (autoDock) await updateDockPosition();
-      return await broadcastState();
-    }
-    await onAction?.(action, value);
-    return await broadcastState();
+    return broadcastState();
   }
 
   function dispose() {
-    stopDockLoop();
-    if (win && !win.isDestroyed()) {
-      try { win.destroy(); } catch { /* ignore */ }
-    }
-    win = null;
+    stopLoop();
+    for (const w of [panel, orb]) if (alive(w)) { try { w.destroy(); } catch { /* ignore */ } }
+    panel = null;
+    orb = null;
   }
 
-  return {
-    show,
-    hide,
-    toggle,
-    handleAction,
-    broadcastState,
-    dispose,
-  };
+  return { show, hide, toggle, handleAction, broadcastState, dispose };
 }

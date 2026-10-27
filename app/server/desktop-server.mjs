@@ -57,7 +57,7 @@ export async function serveStatic(req, res, clientDirectory) {
 
   res.statusCode = 200;
   res.setHeader("Content-Type", contentTypes[path.extname(filename).toLowerCase()] || "application/octet-stream");
-  res.setHeader("Cache-Control", path.basename(filename) === "index.html" ? "no-cache" : "public, max-age=31536000, immutable");
+  res.setHeader("Cache-Control", path.extname(filename).toLowerCase() === ".html" ? "no-cache" : "public, max-age=31536000, immutable");
   if (req.method === "HEAD") return res.end();
 
   const stream = createReadStream(filename);

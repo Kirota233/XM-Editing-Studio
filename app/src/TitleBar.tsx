@@ -1,4 +1,4 @@
-declare const i: any;
+﻿declare const i: any;
 
 export interface UpdaterState {
   status: 'idle' | 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready' | 'error';
@@ -12,8 +12,8 @@ export interface UpdaterState {
 
 const DEFAULT_STATE: UpdaterState = {
   status: 'idle',
-  currentVersion: '1.4.0',
-  latestVersion: '1.4.0',
+  currentVersion: '1.5.0',
+  latestVersion: '1.5.0',
   hasUpdate: false,
   progress: 0,
 };
@@ -88,9 +88,9 @@ export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } 
           type="button"
           className="bos-companion-pill"
           onClick={() => api?.companionAction?.('toggle').catch(() => {})}
-          title="呼出或隐藏桌面可爱的剪映伴侣毛玻璃悬浮球（支持自动吸附剪映窗口）"
+          title="呼出或隐藏月薪喵：置顶毛玻璃剪映插件面板（可磁吸剪映窗口）"
         >
-          🐾 剪映伴侣悬浮窗
+          🐱 月薪喵
         </button>
         <button
           type="button"

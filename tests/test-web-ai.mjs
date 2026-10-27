@@ -18,8 +18,10 @@ function fixture() {
     isDestroyed() { return this.destroyed; }
   }
   class View {
-    constructor(options) { this.options = options; this.webContents = new Contents(); views.push(this); }
+    constructor(options) { this.options = options; this.webContents = new Contents(); this.borderRadius = 0; this.bgColor = ''; views.push(this); }
     setBounds(bounds) { this.bounds = bounds; }
+    setBorderRadius(r) { this.borderRadius = r; }
+    setBackgroundColor(c) { this.bgColor = c; }
   }
   const win = { destroyed: false, zoom: 1, isDestroyed() { return this.destroyed; }, getContentSize: () => [1440, 900], webContents: { getZoomFactor: () => win.zoom }, contentView: { addChildView: view => attached.add(view), removeChildView: view => attached.delete(view) } };
   const host = createWebAIHost({ View, getWindow: () => win, shell: { openExternal: async url => opened.push(url) } });
@@ -51,6 +53,8 @@ test('webviews create lazily, keep independent login partitions and reuse conten
   assert.equal(f.views.length, 2); assert.deepEqual([...f.attached], [f.views[1]]);
   for (let n = 0; n < 2; n++) {
     const view = f.views[n], prefs = view.options.webPreferences;
+    assert.equal(view.borderRadius, 14);
+    assert.equal(view.bgColor, '#00000000');
     assert.deepEqual(view.webContents.loaded, [WEB_AI_PROVIDERS[n].url]);
     assert.equal(prefs.partition, 'persist:xm-official-ai-' + WEB_AI_PROVIDERS[n].id);
     assert.equal(prefs.nodeIntegration, false); assert.equal(prefs.sandbox, true); assert.equal(prefs.contextIsolation, true); assert.equal(prefs.webSecurity, true); assert.equal(prefs.devTools, false); assert.equal(prefs.preload, undefined);

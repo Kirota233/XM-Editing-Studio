@@ -1,4 +1,4 @@
-import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
+﻿import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -54,7 +54,7 @@ const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWind
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
 const autoUpdater = createAutoUpdater({
-  currentVersion: app.getVersion() || '1.4.0',
+  currentVersion: app.getVersion() || '1.5.0',
   downloadDirectory: path.join(app.getPath('userData'), 'updates'),
   onQuit: () => app.quit(),
   notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },
@@ -327,6 +327,7 @@ if (!hasSingleInstance) {
     companionDock = createCompanionDock({
       preloadPath,
       iconPath: path.join(app.getAppPath(), "build", "app-icon.ico"),
+      baseUrl: `http://${APP_HOST}:${APP_PORT}`,
       getJianyingState: () => jianying.run('status', {}),
       getWatermarkState: () => watermarkHost.getState(),
       getPeriodStatus: () => periodKeeper.status(),
@@ -334,9 +335,19 @@ if (!hasSingleInstance) {
         if (action === 'navigate') {
           focusAndNavigate(String(value || ''));
         } else if (action === 'jy-scan') {
-          await jianying.run('scan', {});
+          const connection = jianying.lastConnection?.();
+          if (!connection) throw new Error('请先在主工作台「剪映自动化」选择 AI 模型并扫描一次，之后月薪喵即可独立扫描。');
+          await jianying.run('scan', {}, connection);
+        } else if (action === 'jy-export') {
+          await jianying.run('export', { index: 0 });
+        } else if (action === 'jy-extract') {
+          await jianying.run('extract', {});
+        } else if (action === 'jy-stop') {
+          await jianying.run('stop', {});
+        } else if (action === 'jy-modal') {
+          await jianying.run('modal', { id: String(value?.id || ''), confirmed: Boolean(value?.confirmed) });
         } else if (action === 'wm-add') {
-          const result = await dialog.showOpenDialog(mainWindow, {
+          const result = await dialog.showOpenDialog({
             title: '选择要添加水印的视频文件（支持多选）',
             properties: ['openFile', 'multiSelections'],
             filters: [{ name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'] }],
@@ -346,11 +357,18 @@ if (!hasSingleInstance) {
           }
         } else if (action === 'wm-start') {
           await watermarkHost.startBatch();
+        } else if (action === 'wm-cancel') {
+          await watermarkHost.cancelBatch();
+        } else if (action === 'wm-open') {
+          if (typeof value === 'string' && value) shell.showItemInFolder(path.resolve(value));
         } else if (action === 'toggle-period') {
           const cur = await periodKeeper.status();
-          await periodKeeper.setEnabled(!cur?.enabled, 'period');
+          await periodKeeper.setEnabled(!cur?.enabled, cur?.mode || 'compatible');
         } else if (action === 'launch-jy') {
-          await quickLaunch.launch().catch(() => {});
+          await quickLaunch.scan().catch(() => {});
+          await quickLaunch.launch();
+        } else {
+          throw new Error('未知的月薪喵操作。');
         }
       },
     });
@@ -364,7 +382,7 @@ if (!hasSingleInstance) {
       systemTray.setToolTip("XM剪辑台 · 视频批量水印与剪映智能工作台");
       const menu = Menu.buildFromTemplate([
         { label: "打开 XM剪辑台", click: () => focusAndNavigate("") },
-        { label: "召唤/隐藏 剪映灵动伴侣悬浮窗", click: () => void companionDock?.toggle?.() },
+        { label: "召唤/隐藏 月薪喵（剪映插件）", click: () => void companionDock?.toggle?.() },
         { type: "separator" },
         { label: "批量水印中心（原生硬件加速）", click: () => focusAndNavigate("watermark") },
         { label: "剪映智能工作台", click: () => focusAndNavigate("jianying") },

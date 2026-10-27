@@ -81,15 +81,19 @@ test('workspace removes music requirements and SRT restoration while preserving 
   assert.doesNotMatch(textOf(tree), /配乐要求|选择 SRT|下载标点还原/);
   assert.match(textOf(tree), /原工具方式/); assert.match(textOf(tree), /复制到剪映/);
 });
-test('right rail displays eight-folder capacity and an accessible resize handle', () => {
-  const rail = ui.QuickRail(); assert.match(textOf(rail), /0 \/ 8/); assert.match(textOf(rail), /自动隐藏/);
+test('right quick rail is removed while the left sidebar keeps an accessible resize handle and bottom-left open-source/author credits', () => {
+  assert.equal(ui.QuickRail, undefined);
   const handle = ui.SidebarResizer(); assert.equal(handle.props.role, 'separator'); assert.equal(handle.props['aria-orientation'], 'vertical');
-  saved.set('xm.layout.v1', JSON.stringify({ autoHideRail: true }));
-  const hidden = ui.QuickRail();
-  const content = nodes(hidden, node => node.props.id === 'bos-quickrail-content')[0];
-  assert.equal(content.props.inert, true); assert.equal(content.props['aria-hidden'], true);
-  assert.equal(nodes(hidden, node => node.type === 'button' && node.props['aria-label'] === '展开快捷栏').length, 1);
-  saved.delete('xm.layout.v1');
+  const credits = ui.SidebarCredits();
+  const creditsText = textOf(credits);
+  assert.match(creditsText, /作者：\s*小马/);
+  assert.match(creditsText, /重构：\s*塔奇/);
+  assert.equal(ui.OPEN_SOURCE_PROJECTS.length, 3);
+  for (const name of ['watermarker', 'JianYing-Period-Keeper', 'JianYing-AI-Pro']) {
+    assert.match(creditsText, new RegExp(name));
+  }
+  const titleBar = ui.TitleBar();
+  assert.match(textOf(titleBar), /v1\.5\.0/);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {

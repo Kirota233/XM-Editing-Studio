@@ -164,6 +164,10 @@ export function createJianyingHost({ appDirectory, dataDirectory, minimize = () 
     warm() {
       return command('status').catch(() => WARMING_STATE);
     },
+    /** Last AI connection chosen in the main workspace; lets the desktop plugin panel rescan without the main window. */
+    lastConnection() {
+      return connection ? { provider: { ...connection.provider }, model: connection.model } : null;
+    },
     async run(action, args = {}, selectedConnection) {
       if (!allowed.has(action) || !args || typeof args !== 'object' || JSON.stringify(args).length > 500000) {
         throw new Error('无效的剪映 AI 操作。');

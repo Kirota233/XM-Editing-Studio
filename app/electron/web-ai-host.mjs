@@ -29,13 +29,23 @@ export function createWebAIHost({ View, getWindow, shell }) {
       const partition = `persist:xm-official-ai-${id}`;
       const view = new View({ webPreferences: { partition, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, devTools: false, backgroundThrottling: true } });
       const value = { view, provider, loading: true, error: '', url: provider.url };
+      // Native views ignore CSS border-radius; clip the embedded page natively so it matches the rounded slot.
+      const applyRoundedCorner = () => {
+        try { view.setBorderRadius?.(14); } catch { /* older runtimes */ }
+        try { view.setBackgroundColor?.('#00000000'); } catch { /* ignore */ }
+      };
+      applyRoundedCorner();
       entries.set(id, value);
       restrict(view.webContents, partition);
       // Keep web account sessions separate from the main app's keys, history and local-file APIs.
       view.webContents.session.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === 'clipboard-sanitized-write'));
       view.webContents.session.setPermissionCheckHandler((_contents, permission) => permission === 'clipboard-sanitized-write');
-      view.webContents.on('did-start-loading', () => { value.loading = true; value.error = ''; });
-      view.webContents.on('did-stop-loading', () => { value.loading = false; });
+      view.webContents.on('did-start-loading', () => { value.loading = true; value.error = ''; applyRoundedCorner(); });
+      view.webContents.on('did-stop-loading', () => {
+        value.loading = false;
+        applyRoundedCorner();
+        try { void view.webContents.insertCSS?.('html, body { border-radius: 14px !important; overflow: hidden !important; }')?.catch?.(() => {}); } catch { /* ignore */ }
+      });
       view.webContents.on('did-navigate', (_event, url) => { value.url = url; });
       view.webContents.on('did-navigate-in-page', (_event, url, main) => { if (main) value.url = url; });
       view.webContents.on('did-fail-load', (_event, code, description, _url, main) => { if (main && code !== -3) { value.loading = false; value.error = `网页加载失败：${description}。可刷新，或在系统浏览器中打开。`; } });
@@ -69,6 +79,7 @@ export function createWebAIHost({ View, getWindow, shell }) {
       if (bounds.width < 100 || bounds.height < 80) { detach(); return null; }
       const value = entry(input.provider);
       if (attached !== value) { detach(); win.contentView.addChildView(value.view); attached = value; }
+      try { value.view.setBorderRadius?.(14); } catch { /* older runtimes */ }
       value.view.setBounds(bounds);
       return snapshot(value);
     },
