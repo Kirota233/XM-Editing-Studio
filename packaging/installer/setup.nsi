@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "FileFunc.nsh"
@@ -34,7 +34,7 @@ VIAddVersionKey /LANG=2052 "LegalCopyright" "XM剪辑台"
 !define MUI_UNICON "${APP_ICON}"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "欢迎安装XM剪辑台"
-!define MUI_WELCOMEPAGE_TEXT "中文、英文、西语台词整理，Gemini / DeepSeek / 豆包剧本分析与分段配乐、Suno 音乐生成、样片水印与 JianYing-Ai-Pro。$\r$\n$\r$\n版本 ${APP_VERSION}，适用于 Windows 10 / 11 64 位系统。内置运行组件，安装到当前用户，无需管理员权限。$\r$\n$\r$\n安装前请先退出正在运行的 XM剪辑台或小马剪辑台。"
+!define MUI_WELCOMEPAGE_TEXT "中文、英文、西语台词整理，Gemini / DeepSeek / 豆包剧本分析与分段配乐、Suno 音乐生成、样片水印与 JianYing-Ai-Pro。$\r$\n$\r$\n版本 ${APP_VERSION}，适用于 Windows 10 / 11 64 位系统。内置运行组件，安装到当前用户，无需管理员权限。$\r$\n$\r$\n安装时会自动清理旧版本残留的无用程序文件，并完整保留你的个人配置、剧本历史与本地音乐。"
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE ValidateDirectory
 !insertmacro MUI_PAGE_DIRECTORY
@@ -46,7 +46,7 @@ VIAddVersionKey /LANG=2052 "LegalCopyright" "XM剪辑台"
 !define MUI_FINISHPAGE_SHOWREADME_NOTCHECKED
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "查看使用说明"
 !insertmacro MUI_PAGE_FINISH
-!define MUI_UNCONFIRMPAGE_TEXT_TOP "卸载程序只移除软件文件。模型连接、剧本历史、本地音乐和导出素材将保留。请先退出XM剪辑台。"
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "卸载程序只移除软件文件与引擎缓存。模型连接、剧本历史、本地音乐和导出素材将保留。请先退出XM剪辑台。"
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_UNPAGE_FINISH
@@ -112,6 +112,9 @@ FunctionEnd
 
 !macro CHECK_APP_CLOSED PREFIX
 Function ${PREFIX}CheckAppClosed
+  nsExec::ExecToStack 'taskkill /F /IM PeriodKeeper.exe /IM JianYingEngine.exe'
+  Pop $0
+  Pop $0
   IfFileExists "$INSTDIR\小马剪辑台.exe" 0 appClosed
   retryClose:
     System::Call 'kernel32::CreateFileW(w "$INSTDIR\小马剪辑台.exe", i 0x40000000, i 0, p 0, i 3, i 0, p 0) p.r0'
@@ -132,6 +135,23 @@ Section "XM剪辑台（必选）" MainSection
   SectionIn RO
   Call ValidateDirectory
   Call CheckAppClosed
+  ; Clean all obsolete files and subdirectories from any previous installation in $INSTDIR
+  RMDir /r "$INSTDIR\locales"
+  RMDir /r "$INSTDIR\resources"
+  RMDir /r "$INSTDIR\swiftshader"
+  RMDir /r "$INSTDIR\.xiaoma-update-backups"
+  Delete "$INSTDIR\*.dll"
+  Delete "$INSTDIR\*.pak"
+  Delete "$INSTDIR\*.bin"
+  Delete "$INSTDIR\*.dat"
+  Delete "$INSTDIR\*.json"
+  Delete "$INSTDIR\*.html"
+  Delete "$INSTDIR\*.txt"
+  Delete "$INSTDIR\*.exe"
+  ; Clean stale cached engine binaries in AppData (preserves user settings, templates, scripts, and music)
+  RMDir /r "$APPDATA\xm-editing-studio\jianying-ai\engine"
+  RMDir /r "$APPDATA\XM剪辑台\jianying-ai\engine"
+  RMDir /r "$APPDATA\xm-editing-studio-source\jianying-ai\engine"
   SetOutPath "$INSTDIR"
   FileOpen $0 "$INSTDIR\xiaoma-install.id" w
   FileWrite $0 "${INSTALL_ID}"
@@ -151,11 +171,6 @@ Section "XM剪辑台（必选）" MainSection
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "EstimatedSize" ${INSTALLED_SIZE_KB}
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
-  ; Remove only the legacy uninstaller in this registered installation.
-  ; Legacy shortcuts may belong to a separate portable copy and are preserved.
-  ${If} $PreviousDirectory == $INSTDIR
-    Delete "$INSTDIR\卸载小马剪辑台.exe"
-  ${EndIf}
   CreateDirectory "$SMPROGRAMS\XM剪辑台"
   CreateShortcut "$SMPROGRAMS\XM剪辑台\XM剪辑台.lnk" "$INSTDIR\小马剪辑台.exe"
   CreateShortcut "$SMPROGRAMS\XM剪辑台\使用说明.lnk" "$INSTDIR\使用说明.txt"
@@ -168,7 +183,7 @@ Section "创建桌面快捷方式" DesktopSection
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${MainSection} "安装软件、内置运行环境、本地水印引擎和开始菜单入口。"
+  !insertmacro MUI_DESCRIPTION_TEXT ${MainSection} "安装软件、内置运行环境、本地水印引擎和开始菜单入口（自动清理旧版本冗余文件）。"
   !insertmacro MUI_DESCRIPTION_TEXT ${DesktopSection} "在当前用户桌面创建XM剪辑台快捷方式。"
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
@@ -208,6 +223,11 @@ Section "Uninstall"
   ${EndIf}
   Delete "$INSTDIR\xiaoma-install.id"
   Delete "$INSTDIR\卸载XM剪辑台.exe"
+  Delete "$INSTDIR\卸载小马剪辑台.exe"
+  RMDir /r "$INSTDIR\.xiaoma-update-backups"
+  RMDir /r "$APPDATA\xm-editing-studio\jianying-ai\engine"
+  RMDir /r "$APPDATA\XM剪辑台\jianying-ai\engine"
+  RMDir /r "$APPDATA\xm-editing-studio-source\jianying-ai\engine"
   RMDir "$INSTDIR"
   Goto uninstallDone
   uninstallFailed:

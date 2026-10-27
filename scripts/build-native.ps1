@@ -5,16 +5,36 @@ Push-Location $repoRoot
 try {
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
     if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x C# compiler is required on Windows x64.' }
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
+    # 1. Compile PeriodKeeper.exe (C# native clipboard helper)
     $helperDirectory = Join-Path $repoRoot '.generated/native/helpers'
     New-Item -ItemType Directory -Path $helperDirectory -Force | Out-Null
     $helper = Join-Path $helperDirectory 'PeriodKeeper.exe'
     $source = Join-Path $repoRoot 'app/native/PeriodKeeper.cs'
-    & $compiler /nologo /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + $helper) $source
+    & $compiler /nologo /utf8output /codepage:65001 /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + $helper) $source
     if ($LASTEXITCODE -ne 0) { throw 'Punctuation helper compilation failed.' }
     $hash = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
-    [IO.File]::WriteAllText((Join-Path $repoRoot 'app/electron/period-helper-integrity.mjs'), "export const HELPER_SHA256 = '$hash';`n", (New-Object Text.UTF8Encoding $false))
-    & $Python -m PyInstaller --noconfirm --clean --onefile --console --name JianYingEngine --paths app/native/jianying --collect-all cv2 --collect-all pynput --distpath .generated/native-engine --workpath .generated/pyinstaller --specpath .generated app/native/jianying/engine.py
-    if ($LASTEXITCODE -ne 0) { throw 'Python engine compilation failed. Install scripts/requirements-native.txt first.' }
-    & $Python scripts/stage-native.py
-    if ($LASTEXITCODE -ne 0) { throw 'Native engine staging failed.' }
+    [IO.File]::WriteAllText((Join-Path $repoRoot 'app/electron/period-helper-integrity.mjs'), "export const HELPER_SHA256 = '$hash';`n", $utf8NoBom)
+
+    # 2. Compile JianYingEngine.exe (Refactored from 70MB Python/PyInstaller to 47KB native C#)
+    $engineOutDir = Join-Path $repoRoot 'app/build/jianying'
+    if (Test-Path -LiteralPath $engineOutDir) {
+        Remove-Item -LiteralPath $engineOutDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $engineOutDir -Force | Out-Null
+    $engineExe = Join-Path $engineOutDir 'JianYingEngine.exe'
+    $engineSource = Join-Path $repoRoot 'app/native/JianYingEngine.cs'
+    & $compiler /nologo /utf8output /codepage:65001 /target:exe /platform:x64 /optimize+ `
+        /r:System.Web.Extensions.dll `
+        /r:System.Drawing.dll `
+        /r:System.Windows.Forms.dll `
+        ('/out:' + $engineExe) $engineSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $engineExe)) {
+        throw 'JianYingEngine C# compilation failed.'
+    }
+    $engineHash = (Get-FileHash -LiteralPath $engineExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $engineManifest = "{`n  `"sha256`": `"$engineHash`"`n}`n"
+    [IO.File]::WriteAllText((Join-Path $engineOutDir 'engine.json'), $engineManifest, $utf8NoBom)
+    Write-Host "Native helpers built: PeriodKeeper.exe and JianYingEngine.exe ($((Get-Item $engineExe).Length) bytes)"
 } finally { Pop-Location }

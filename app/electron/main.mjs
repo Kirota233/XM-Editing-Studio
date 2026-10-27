@@ -16,6 +16,7 @@ import { createQuickLaunch } from './quick-launch.mjs';
 import { createWebAIHost } from './web-ai-host.mjs';
 import { webAIScriptPrompt } from '../shared/web-ai-prompts.mjs';
 import { createWebAnalysis } from './web-ai-analysis.mjs';
+import { createAutoUpdater } from './auto-updater.mjs';
 
 const APP_HOST = "127.0.0.1";
 app.setName('XM剪辑台');
@@ -33,6 +34,12 @@ const watermarkBrowser = createWatermarkBrowser({ clientDirectory: path.join(app
 const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWindow, shell });
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
+const autoUpdater = createAutoUpdater({
+  currentVersion: app.getVersion() || '1.4.0',
+  downloadDirectory: path.join(app.getPath('userData'), 'updates'),
+  onQuit: () => app.quit(),
+  notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },
+});
 const quickLaunch = createQuickLaunch({ settingsFile: path.join(app.getPath('userData'), 'quick-launch.json'), shell,
   chooseDirectory: async () => { const result = await dialog.showOpenDialog(mainWindow, { title: '添加自定义文件夹', properties: ['openDirectory'] }); return result.canceled ? null : result.filePaths[0]; },
   chooseExecutable: async () => { const result = await dialog.showOpenDialog(mainWindow, { title: '选择剪映 JianyingPro.exe', properties: ['openFile'], filters: [{ name: '剪映启动程序', extensions: ['exe'] }] }); return result.canceled ? null : result.filePaths[0]; },
@@ -82,6 +89,23 @@ function registerLocalFileHandlers() {
   ipcMain.handle('bos:period-enabled', (event, enabled, mode) => { fromMainWindow(event); return periodKeeper.setEnabled(enabled, mode); });
   ipcMain.handle('bos:period-copy', (event, text) => { fromMainWindow(event); return periodKeeper.copy(text); });
   ipcMain.handle('bos:jianying-action', (event, action, args, connection) => { fromMainWindow(event); return jianying.run(action, args, connection); });
+  ipcMain.handle('bos:updater-status', event => { fromMainWindow(event); return autoUpdater.snapshot(); });
+  ipcMain.handle('bos:updater-action', (event, action) => {
+    fromMainWindow(event);
+    if (!['check', 'download', 'install'].includes(action)) throw new Error('无效的更新操作。');
+    return autoUpdater[action]();
+  });
+  ipcMain.handle('bos:titlebar-theme', (event, scheme) => {
+    fromMainWindow(event);
+    try {
+      mainWindow?.setTitleBarOverlay?.({
+        color: '#00000000',
+        symbolColor: scheme === 'light' ? '#334155' : '#a1a8a5',
+        height: 36,
+      });
+    } catch { /* ignore on unsupported platforms */ }
+    return { ok: true };
+  });
   ipcMain.handle('bos:quick-launch', (event, action, value) => {
     fromMainWindow(event);
     if (!['scan', 'addFolder', 'removeFolder', 'openFolder', 'select', 'browse', 'launch'].includes(action)) throw new Error('无效的快捷栏操作。');
@@ -169,6 +193,12 @@ if (!hasSingleInstance) {
       title: "XM剪辑台",
       icon: path.join(app.getAppPath(), "build", "app-icon.ico"),
       autoHideMenuBar: true,
+      titleBarStyle: "hidden",
+      titleBarOverlay: {
+        color: "#00000000",
+        symbolColor: "#a1a8a5",
+        height: 36,
+      },
       webPreferences: {
         contextIsolation: true,
         nodeIntegration: false,
@@ -202,6 +232,11 @@ if (!hasSingleInstance) {
     logStartup(`local service listening on ${APP_HOST}:${APP_PORT}`);
     await createMainWindow();
     logStartup("main window loaded");
+    setTimeout(() => {
+      void jianying.warm?.();
+      void periodKeeper.status?.().catch(() => {});
+      void autoUpdater.check?.().catch(() => {});
+    }, 1500);
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) void createMainWindow();
     });

@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { build } from 'esbuild';
 import { buildJianyingAIRequest, requestJianyingAI } from '../app/electron/jianying-ai.mjs';
+import { createJianyingHost } from '../app/electron/jianying-host.mjs';
+import { createAutoUpdater, compareSemver } from '../app/electron/auto-updater.mjs';
 import { createQuickLaunch } from '../app/electron/quick-launch.mjs';
 import { splitScript } from '../app/shared/script-score.mjs';
 
@@ -57,7 +59,7 @@ test('subtitle punctuation survives line breaks, including a trailing comma', ()
 const saved = new Map();
 globalThis.localStorage = { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
 globalThis.i = { createElement: (type, props, ...children) => typeof type === 'function' ? type({ ...(props || {}), children }) : ({ type, props: props || {}, children }), useState: initial => [typeof initial === 'function' ? initial() : initial, () => {}], useEffect: () => {}, useMemo: fn => fn(), useRef: value => ({ current: value }), useSyncExternalStore: (_subscribe, snapshot) => snapshot() };
-const compiled = await build({ entryPoints: ['app/src/upgrade.jsx'], bundle: true, write: false, platform: 'browser', format: 'esm', jsxFactory: 'i.createElement', jsxFragment: 'i.Fragment' });
+const compiled = await build({ entryPoints: ['app/src/upgrade.tsx'], bundle: true, write: false, platform: 'browser', format: 'esm', jsxFactory: 'i.createElement', jsxFragment: 'i.Fragment' });
 const ui = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 function nodes(tree, predicate) { if (!tree || typeof tree !== 'object') return []; return [...(predicate(tree) ? [tree] : []), ...(tree.children || []).flat(Infinity).flatMap(child => nodes(child, predicate))]; }
 const textOf = tree => (tree?.children || []).flat(Infinity).map(child => typeof child === 'object' ? textOf(child) : child ?? '').join('');
@@ -88,4 +90,94 @@ test('right rail displays eight-folder capacity and an accessible resize handle'
   assert.equal(content.props.inert, true); assert.equal(content.props['aria-hidden'], true);
   assert.equal(nodes(hidden, node => node.type === 'button' && node.props['aria-label'] === '展开快捷栏').length, 1);
   saved.delete('xm.layout.v1');
+});
+
+test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {
+  if (process.platform !== 'win32') return;
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'xm-cs-engine-'));
+  const host = createJianyingHost({ appDirectory: path.resolve('app'), dataDirectory: root });
+  try {
+    const initial = await host.run('status', {});
+    assert.equal(initial.ready, true);
+    assert.equal(initial.busy, false);
+    assert.equal(initial.mode, 'return_home');
+
+    const updated = await host.run('settings', { mode: 'wait_close', waits: { open_draft: 5.5 } });
+    assert.equal(updated.mode, 'wait_close');
+    assert.equal(updated.waits.open_draft, 5.5);
+
+    const mediaDir = path.join(root, 'videos');
+    await fs.mkdir(mediaDir, { recursive: true });
+    await fs.writeFile(path.join(mediaDir, 'ep1.mp4'), 'video-1');
+    await fs.writeFile(path.join(mediaDir, 'ep2.mp4'), 'video-2');
+
+    const previewed = await host.run('preview', { folder: mediaDir, template: '测试短剧_第1集', ai: false });
+    assert.equal(previewed.plan.length, 2);
+    assert.equal(previewed.plan[0].new_name, '测试短剧_第1集.mp4');
+
+    const renamed = await host.run('rename', {});
+    assert.equal(renamed.plan.length, 0);
+    assert.equal(await fs.readFile(path.join(mediaDir, '测试短剧_第1集.mp4'), 'utf8'), 'video-1');
+    assert.equal(await fs.readFile(path.join(mediaDir, '测试短剧_第2集.mp4'), 'utf8'), 'video-2');
+  } finally {
+    await host.dispose();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('auto-updater checks GitHub release, verifies SHA-256 on download, and launches installer', async () => {
+  assert.equal(compareSemver('1.4.1', '1.4.0'), 1);
+  assert.equal(compareSemver('v1.4.0', '1.4.0'), 0);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'xm-updater-test-'));
+  try {
+    const payload = Buffer.from('mock-installer-binary');
+    const { createHash } = await import('node:crypto');
+    const sha = createHash('sha256').update(payload).digest('hex');
+    let spawned = null;
+    const updater = createAutoUpdater({
+      currentVersion: '1.4.0',
+      downloadDirectory: root,
+      fetcher: async url => {
+        if (String(url).endsWith('/releases/latest')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              tag_name: 'v1.5.0',
+              html_url: 'https://github.com/Kirota233/XM-Editing-Studio/releases/tag/v1.5.0',
+              assets: [
+                { name: 'XM-Editing-Studio-1.5.0-Windows-x64-Setup.exe', browser_download_url: 'https://example.com/setup.exe' },
+                { name: 'SHA256SUMS.txt', browser_download_url: 'https://example.com/SHA256SUMS.txt' },
+              ],
+            }),
+          };
+        }
+        if (String(url).endsWith('SHA256SUMS.txt')) {
+          return { ok: true, status: 200, text: async () => `${sha}  XM-Editing-Studio-1.5.0-Windows-x64-Setup.exe\n` };
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: new Map([['content-length', String(payload.length)]]),
+          body: (async function* () { yield payload; })(),
+        };
+      },
+      spawnInstaller: file => { spawned = file; },
+    });
+
+    const checked = await updater.check();
+    assert.equal(checked.status, 'available');
+    assert.equal(checked.latestVersion, '1.5.0');
+    assert.equal(checked.hasUpdate, true);
+
+    const downloaded = await updater.download();
+    assert.equal(downloaded.status, 'ready');
+    assert.equal(downloaded.progress, 100);
+
+    const installed = await updater.install();
+    assert.equal(installed.ok, true);
+    assert.equal(spawned, downloaded.installerPath);
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

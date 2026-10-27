@@ -1,0 +1,360 @@
+import { isGeminiModel } from '../shared/script-score.mjs';
+import { usePanelCollapsed } from './PanelState.jsx';
+
+declare const i: any;
+
+function ToolPanel({ id, number, title, detail, children }: { id: string; number: string; title: string; detail: string; children: any }) {
+  const [collapsed, toggle] = usePanelCollapsed('jianying-' + id);
+  return (
+    <section className="bos-jy-panel" data-panel-id={id}>
+      <header>
+        <div className="bos-jy-panel-title">
+          <span className="bos-jy-step-badge">{number}</span>
+          <div>
+            <h3>{title}</h3>
+            <p>{detail}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          className="bos-panel-toggle"
+          aria-expanded={!collapsed}
+          aria-controls={'jy-' + id}
+          onClick={toggle}
+        >
+          {collapsed ? '展开' : '收起'} {collapsed ? '⌄' : '⌃'}
+        </button>
+      </header>
+      <div id={'jy-' + id} hidden={collapsed} className="bos-jy-panel-body">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+const waitsLabels: Record<string, string> = {
+  open_draft: '打开草稿',
+  export: '点击导出',
+  confirm: '确认导出',
+  popup_close: '收起至首页',
+  close_btn: '关闭导出窗口',
+  draft_close: '关闭草稿',
+};
+
+const empty = {
+  queue: [] as any[],
+  plan: [] as any[],
+  logs: [] as string[],
+  templates: [] as any[],
+  waits: {} as Record<string, any>,
+  ready: false,
+  busy: false,
+  status: '正在准备本地引擎…',
+};
+
+export function JianyingStudio({ active, providers, onNavigate }: { active: boolean; providers: any[]; onNavigate: (tab: string) => void }) {
+  const [visited, setVisited] = i.useState(active);
+  const [state, setState] = i.useState(empty as any);
+  const [error, setError] = i.useState('');
+  const [pending, setPending] = i.useState(false);
+  const [selected, setSelected] = i.useState(0);
+  const [modelKey, setModelKey] = i.useState(() => localStorage.getItem('xm.jianying.model') || '');
+  const [folder, setFolder] = i.useState('');
+  const [template, setTemplate] = i.useState('短剧名称_第1集');
+  const [aiRename, setAiRename] = i.useState(false);
+  const [waits, setWaits] = i.useState(null as any);
+  const [templateName, setTemplateName] = i.useState('');
+  const [exportOptionsCollapsed, toggleExportOptions] = usePanelCollapsed('jianying-export-options');
+
+  const api = (globalThis as any).blackObsidian;
+  const models = providers.flatMap(provider =>
+    (provider.models || [])
+      .filter((model: string) => isGeminiModel(provider, model))
+      .map((model: string) => ({ key: provider.id + '::' + model, provider, model }))
+  );
+  const connection = models.find(item => item.key === modelKey) || models[0];
+  const locked = pending || state.busy || state.recording || !!state.modal;
+
+  i.useEffect(() => { if (active) setVisited(true); }, [active]);
+  i.useEffect(() => {
+    if (!active || !visited || !api?.jianyingAction) return;
+    let alive = true, timer: any, lastJson = '';
+    const poll = async () => {
+      let nextDelay = 2500;
+      try {
+        const value = await api.jianyingAction('status', {});
+        if (alive && value) {
+          const serialized = JSON.stringify(value);
+          if (serialized !== lastJson) {
+            lastJson = serialized;
+            setState(value);
+          }
+          if (value.busy || value.recording || value.exporting || !value.ready) nextDelay = 1000;
+        }
+      } catch (err: any) {
+        if (alive) setError(err.message);
+      }
+      if (alive) timer = setTimeout(poll, nextDelay);
+    };
+    void poll();
+    return () => { alive = false; clearTimeout(timer); };
+  }, [active, visited]);
+
+  const perform = async (fn: () => Promise<void>) => {
+    setPending(true); setError('');
+    try { await fn(); }
+    catch (err: any) { setError(err.message || '操作失败。'); }
+    finally { setPending(false); }
+  };
+
+  const run = (action: string, args: Record<string, any> = {}) => perform(async () => {
+    if (!api?.jianyingAction) throw new Error('此功能需要桌面版的本地引擎。');
+    setState(await api.jianyingAction(action, args, connection ? { provider: connection.provider, model: connection.model } : undefined));
+  });
+
+  const choosePath = (key: string) => perform(async () => {
+    const value = await api.chooseDirectory();
+    if (value) setState(await api.jianyingAction('paths', { [key]: value }));
+  });
+
+  const chooseFiles = () => perform(async () => {
+    const files = await api.chooseJianyingFiles();
+    if (files) {
+      setFolder('');
+      setState(await api.jianyingAction('files', { files }));
+    }
+  });
+
+  return (
+    <section className="bos-script bos-jianying" hidden={!active} aria-label="JianYing-Ai-Pro">
+      <div className="bos-jy-overview">
+        <div>
+          <span className="bos-script-eyebrow">JIANYING AUTOMATION</span>
+          <h2>剪映自动化中心</h2>
+          <div className="bos-jy-hotkeys">
+            <span className="bos-hotkey-pill"><kbd>F8</kbd> 录制坐标</span>
+            <span className="bos-hotkey-pill"><kbd>F9</kbd> 跳过等待</span>
+            <span className="bos-hotkey-pill"><kbd>F10</kbd> 紧急中断</span>
+          </div>
+        </div>
+        <div className="bos-jy-status-box">
+          <span className={`bos-status-dot${state.ready ? ' is-online' : ''}`} />
+          <span role="status">{state.status}</span>
+          <button type="button" className="bos-danger-btn" onClick={() => run('stop')} disabled={!state.ready}>
+            中断 · F10
+          </button>
+        </div>
+      </div>
+
+      {error && <p className="bos-script-alert" role="alert">{error}</p>}
+      {state.notice && <p className="bos-script-message" role="status">{state.notice}</p>}
+
+      <div className="bos-jy-panels">
+        <ToolPanel id="export" number="01" title="批量导出" detail="AI 视觉识别剪映草稿队列，全自动顺序导出">
+          <div className="bos-jy-toolbar">
+            <button type="button" disabled={locked || !state.ready} onClick={() => run('wizard')}>录制坐标 · F8</button>
+            <button type="button" disabled={locked || !connection || !state.ready} onClick={() => run('scan')}>AI 扫描草稿</button>
+            <button
+              type="button"
+              className="bos-script-primary"
+              disabled={locked || !state.queue.length || !state.coordinatesReady}
+              onClick={() => run('export', { index: selected })}
+            >
+              开始批量导出 ↗
+            </button>
+          </div>
+          {state.guide && <p className="bos-script-footnote">{state.guide}</p>}
+          <div className="bos-jy-table">
+            <table>
+              <thead>
+                <tr><th>起点</th><th>草稿名称</th><th>状态</th></tr>
+              </thead>
+              <tbody>
+                {state.queue.map((item: any, index: number) => (
+                  <tr key={index} aria-selected={selected === index} onClick={() => setSelected(index)}>
+                    <td>
+                      <input
+                        type="radio"
+                        name="jy-draft"
+                        aria-label={'从草稿 ' + item.name + ' 开始'}
+                        checked={selected === index}
+                        onChange={() => setSelected(index)}
+                      />
+                    </td>
+                    <td>{item.name}</td>
+                    <td><span className="bos-jy-row-badge">{item.st}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!state.queue.length && <p>打开剪映首页后点击「AI 扫描草稿」加载列表</p>}
+          </div>
+
+          <section className="bos-jy-export-options">
+            <header>
+              <div>
+                <h4>导出模式与参数</h4>
+                <small>
+                  {state.mode === 'wait_close' ? '等待完成' : '收起至首页'} · {state.templates.find((item: any) => item.id === state.templateId)?.name || '未选模板'}
+                </small>
+              </div>
+              <button
+                type="button"
+                className="bos-panel-toggle"
+                aria-expanded={!exportOptionsCollapsed}
+                aria-controls="bos-jy-export-options-body"
+                onClick={toggleExportOptions}
+              >
+                {exportOptionsCollapsed ? '展开参数 ⌄' : '收起参数 ⌃'}
+              </button>
+            </header>
+            <div id="bos-jy-export-options-body" hidden={exportOptionsCollapsed} className="bos-jy-export-options-body">
+              <div className="bos-local-match-grid">
+                <label>
+                  <span>导出模式</span>
+                  <select value={state.mode || 'return_home'} disabled={locked || !state.ready} onChange={(event: any) => run('settings', { mode: event.target.value })}>
+                    <option value="return_home">收起至首页 · 后台渲染</option>
+                    <option value="wait_close">等待完成 · 逐个渲染</option>
+                  </select>
+                </label>
+                <label>
+                  <span>坐标模板 ({state.resolution?.join('×') || '待检测'})</span>
+                  <select value={state.templateId || ''} disabled={locked || !state.ready} onChange={(event: any) => run('select_template', { id: event.target.value })}>
+                    <option value="">请先录制坐标</option>
+                    {state.templates.map((item: any) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              {state.templateId && (
+                <div className="bos-jy-toolbar">
+                  <input aria-label="模板新名称" maxLength={40} value={templateName} onChange={(event: any) => setTemplateName(event.target.value)} placeholder="重命名当前模板" />
+                  <button type="button" disabled={locked || !templateName.trim()} onClick={() => run('rename_template', { id: state.templateId, name: templateName })}>改名</button>
+                  <button type="button" disabled={locked} onClick={() => run('delete_template', { id: state.templateId })}>删除</button>
+                </div>
+              )}
+              <div className="bos-jy-waits">
+                {Object.entries(waitsLabels).map(([key, label]) => (
+                  <label key={key}>
+                    <span>{label} (s)</span>
+                    <input
+                      type="number"
+                      min="0.1"
+                      max="600"
+                      step="0.1"
+                      disabled={locked || !state.ready}
+                      value={(waits || state.waits)[key] ?? ''}
+                      onChange={(event: any) => setWaits((previous: any) => ({ ...(previous || state.waits), [key]: event.target.value }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                type="button"
+                disabled={locked || !waits}
+                onClick={() => perform(async () => { setState(await api.jianyingAction('settings', { waits })); setWaits(null); })}
+              >
+                保存等待时间
+              </button>
+            </div>
+          </section>
+        </ToolPanel>
+
+        <ToolPanel id="subtitles" number="02" title="字幕工程" detail="提取 SRT 字幕、统一 Noto Sans Bold 字体或显隐轨道">
+          <label>
+            <span>剪映草稿根目录</span>
+            <div className="bos-jy-path">
+              <input readOnly value={state.draftDir || ''} placeholder="选择 Drafts 草稿根目录" />
+              <button type="button" disabled={locked} onClick={() => choosePath('draftDir')}>浏览</button>
+            </div>
+          </label>
+          <label>
+            <span>字幕导出目录</span>
+            <div className="bos-jy-path">
+              <input readOnly value={state.subtitleOutput || ''} placeholder="选择字幕导出位置" />
+              <button type="button" disabled={locked} onClick={() => choosePath('subtitleOutput')}>浏览</button>
+            </div>
+          </label>
+          <div className="bos-jy-toolbar">
+            <button type="button" className="bos-script-primary" disabled={locked || !state.draftDir} onClick={() => run('extract')}>提取字幕并隐藏轨道</button>
+            <button type="button" disabled={locked || !state.draftDir} onClick={() => run('fonts')}>统一 Noto Sans Bold</button>
+            <button type="button" disabled={locked || !state.draftDir} onClick={() => run('unhide')}>恢复字幕显示</button>
+          </div>
+          <small>操作前请先退出剪映，写入前自动创建安全备份。</small>
+        </ToolPanel>
+
+        <ToolPanel id="rename" number="03" title="批量改名" detail="支持集数模板或 AI 语义对齐，先预览后执行">
+          <div className="bos-source-choice">
+            <button type="button" aria-pressed={!aiRename} disabled={locked} onClick={() => setAiRename(false)}>按集数模板</button>
+            <button type="button" aria-pressed={aiRename} disabled={locked} onClick={() => setAiRename(true)}>AI 智能命名</button>
+          </div>
+          <label>
+            <span>目标目录 {aiRename && '或文件'}</span>
+            <div className="bos-jy-path">
+              <input readOnly value={folder} placeholder={state.fileCount ? `已选 ${state.fileCount} 个文件` : '选择待改名文件夹'} />
+              <button type="button" disabled={locked} onClick={() => perform(async () => { const value = await api.chooseDirectory(); if (value) setFolder(value); })}>文件夹</button>
+              {aiRename && <button type="button" disabled={locked} onClick={chooseFiles}>选文件</button>}
+            </div>
+          </label>
+          <label>
+            <span>命名模板</span>
+            <input maxLength={500} value={template} disabled={locked} onChange={(event: any) => setTemplate(event.target.value)} placeholder="例如：短剧名称_第1集" />
+          </label>
+          <div className="bos-jy-toolbar">
+            <button type="button" disabled={locked || !state.ready || (aiRename && !connection)} onClick={() => run('preview', { folder, template, ai: aiRename })}>
+              {aiRename ? 'AI 生成预览' : '生成改名预览'}
+            </button>
+            <button type="button" className="bos-script-primary" disabled={locked || !state.plan.length} onClick={() => run('rename')}>
+              执行改名 ({state.plan.length})
+            </button>
+          </div>
+          <div className="bos-jy-table">
+            <table>
+              <thead><tr><th>原文件名</th><th>新文件名</th></tr></thead>
+              <tbody>
+                {state.plan.map((item: any, index: number) => (
+                  <tr key={index}><td>{item.old_name}</td><td>{item.new_name}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            {!state.plan.length && <p>生成预览后在此核对文件名映射</p>}
+          </div>
+        </ToolPanel>
+
+        <ToolPanel id="settings" number="04" title="模型连接" detail="复用全局 Gemini 模型，供草稿识别与智能改名调用">
+          <label>
+            <span>当前模型</span>
+            <select
+              value={connection?.key || ''}
+              disabled={locked}
+              onChange={(event: any) => { setModelKey(event.target.value); localStorage.setItem('xm.jianying.model', event.target.value); }}
+            >
+              {!models.length && <option value="">请先添加 Gemini 连接</option>}
+              {models.map(item => <option key={item.key} value={item.key}>{item.model} · {item.provider.name}</option>)}
+            </select>
+          </label>
+          <div className="bos-jy-toolbar">
+            <button type="button" onClick={() => onNavigate('providers')}>管理模型与连接 ↗</button>
+          </div>
+        </ToolPanel>
+      </div>
+
+      <details className="bos-jy-log">
+        <summary>运行日志 · {state.logs.length} 条记录</summary>
+        <pre>{state.logs.join('\n') || '暂无运行记录'}</pre>
+      </details>
+
+      {state.modal && (
+        <div className="bos-jy-modal-backdrop">
+          <section className="bos-jy-modal" role="dialog" aria-modal="true" aria-labelledby="jy-modal-title">
+            <h3 id="jy-modal-title">{state.modal.title}</h3>
+            <p>{state.modal.message}</p>
+            <div className="bos-jy-toolbar">
+              <button type="button" disabled={pending} onClick={() => run('modal', { id: state.modal.id, confirmed: false })}>取消</button>
+              <button type="button" className="bos-script-primary" disabled={pending} onClick={() => run('modal', { id: state.modal.id, confirmed: true })}>确认执行</button>
+            </div>
+          </section>
+        </div>
+      )}
+    </section>
+  );
+}

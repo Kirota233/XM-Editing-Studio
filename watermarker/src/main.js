@@ -33,17 +33,16 @@ app.innerHTML = `
     </section>
     <section class="panel">
       <div class="browser-tools" id="browser-tools" hidden>
-        <strong>使用浏览器加速</strong>
+        <strong>外部浏览器硬件加速</strong>
         <div class="browser-actions"><button id="open-edge" type="button" disabled>交给 Edge 处理</button><button id="open-chrome" type="button" disabled>交给 Chrome 处理</button></div>
         <p id="browser-status" role="status">检测已安装的浏览器…</p>
-        <small>自动带入已选视频、水印和画质设置；当前处理会先中断。仅本机读取，请保持 XM剪辑台运行。</small>
       </div>
       <div class="browser-session-info" id="browser-session-info" role="status" hidden></div>
       <label class="drop-zone" id="drop-zone" for="video-input">
         <input id="video-input" type="file" accept="video/*" multiple />
         <span class="drop-icon">＋</span>
-        <strong>拖放视频到这里</strong>
-        <span>或点击选择视频，可一次处理多个文件</span>
+        <strong>拖放或点击导入视频</strong>
+        <span>支持 MP4 / MOV / MKV / WebM 多文件批处理</span>
       </label>
 
       <div class="watermark-picker"><label>水印图片 <input id="watermark-input" type="file" accept="image/png,image/jpeg,image/webp" /></label><button id="watermark-reset" class="text-button" type="button">恢复默认水印</button><img id="watermark-preview" src="/watermarker/watermark.png" alt="当前水印预览" /></div>
@@ -111,7 +110,7 @@ app.innerHTML = `
 
       <section class="processed-tasks" aria-label="已处理任务">
         <div class="processed-heading"><strong>已处理任务 <span id="processed-count">0</span></strong><div><button id="clear-processed" class="text-button" type="button" disabled>清除任务</button><button id="toggle-processed" class="text-button" type="button" aria-controls="processed-body" aria-expanded="true">收起 ⌃</button></div></div>
-        <div id="processed-body"><p id="processed-empty">还没有完成的样片</p><div id="output-list" class="output-list" aria-label="已完成样片"></div><small>保留本次打开页面后的完成记录。清除列表不删除已下载的视频；关闭页面前请下载需要的样片。</small></div>
+        <div id="processed-body"><p id="processed-empty">还没有完成的样片</p><div id="output-list" class="output-list" aria-label="已完成样片"></div></div>
       </section>
       <!-- 报错日志与原因诊断卡片 -->
       <div id="error-card" class="error-card" style="display: none;">
@@ -160,7 +159,7 @@ const engineHint = document.querySelector("#engine-hint");
 
 function updateEngineHint() {
   ffmpegSettingsBar.style.display = settingEngine.value === 'webav' ? 'none' : 'flex';
-  engineHint.textContent = settingEngine.value === 'auto' ? 'MP4 优先尝试 WebAV 加速，不兼容自动回退 FFmpeg。720p 样片可减少处理量；实际速度取决于设备与视频编码。' : settingEngine.value === 'webav' ? 'WebAV 使用系统编解码器，适合 MP4；若不兼容可切换自动或 FFmpeg。' : '内置单线程离线引擎，兼容多种格式。可选 720p 快速样片；音频默认直接复制。';
+  engineHint.textContent = settingEngine.value === 'auto' ? 'MP4 优先启用 WebAV 硬件编码，不兼容自动回退 FFmpeg。' : settingEngine.value === 'webav' ? '调用系统硬件编解码器高速合成 MP4。' : '离线 WASM 引擎，全格式高兼容。';
 }
 settingEngine.addEventListener('change', updateEngineHint);
 updateEngineHint();

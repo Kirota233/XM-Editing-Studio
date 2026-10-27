@@ -33,4 +33,8 @@ contextBridge.exposeInMainWorld("blackObsidian", {
   connectMusicLibrary: () => ipcRenderer.invoke('bos:music-library-connect'),
   refreshMusicLibrary: () => ipcRenderer.invoke('bos:music-library-refresh'),
   disconnectMusicLibrary: id => ipcRenderer.invoke('bos:music-library-disconnect', id),
+  getUpdaterStatus: () => ipcRenderer.invoke('bos:updater-status'),
+  updaterAction: action => ipcRenderer.invoke('bos:updater-action', action),
+  onUpdaterState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:updater-state', listener); return () => ipcRenderer.removeListener('bos:updater-state', listener); },
+  setTitleBarTheme: scheme => ipcRenderer.invoke('bos:titlebar-theme', scheme),
 });

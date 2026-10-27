@@ -294,7 +294,7 @@ test('renderer routes webpage analysis without HTTP or API credentials and cance
 const saved = new Map(); globalThis.localStorage = { getItem: key => saved.get(key) || null, setItem: (key, value) => saved.set(key, value), removeItem: key => saved.delete(key) };
 let slots = [], cursor = 0;
 globalThis.i = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }), useState(initial) { const at = cursor++; if (!(at in slots)) slots[at] = typeof initial === 'function' ? initial() : initial; return [slots[at], value => { slots[at] = value; }]; }, useRef: value => ({ current: value }), useEffect: () => {}, useMemo: fn => fn(), useSyncExternalStore: (_subscribe, snapshot) => snapshot() };
-const built = await build({ entryPoints: ['app/src/upgrade.jsx'], bundle: true, write: false, format: 'esm', jsxFactory: 'i.createElement', jsxFragment: 'i.Fragment' });
+const built = await build({ entryPoints: ['app/src/upgrade.tsx'], bundle: true, write: false, format: 'esm', jsxFactory: 'i.createElement', jsxFragment: 'i.Fragment' });
 const ui = await import('data:text/javascript;base64,' + Buffer.from(built.outputFiles[0].text).toString('base64'));
 const nodes = tree => !tree || typeof tree !== 'object' ? [] : [tree, ...(tree.children || []).flat(Infinity).flatMap(nodes)];
 const textOf = tree => typeof tree === 'string' ? tree : (tree?.children || []).flat(Infinity).map(textOf).join('');

@@ -1,0 +1,9 @@
+export { MusicStudio } from './MusicStudio.jsx';
+export { GlobalThemePicker, useGlobalTheme } from './GlobalThemes.tsx';
+export { ScriptAutomation, useScriptAutomation } from './ScriptAutomation.tsx';
+export { WatermarkStudio } from './WatermarkStudio.tsx';
+export { UsageGuide } from './UsageGuide.tsx';
+export { JianyingStudio } from './JianyingStudio.tsx';
+export { QuickRail, SidebarResizer } from './QuickRail.tsx';
+export { WebAIStudio } from './WebAIStudio.tsx';
+export { TitleBar } from './TitleBar.tsx';

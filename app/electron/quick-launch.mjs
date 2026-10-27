@@ -47,19 +47,48 @@ export async function discoverJianying(extraPaths = []) {
 }
 
 export function createQuickLaunch({ settingsFile, shell, chooseDirectory, chooseExecutable, discover = discoverJianying }) {
-  let settings = { folders: [], selected: '' }, loaded, scanning, installs = [], mutations = Promise.resolve();
+  let settings = { folders: [], selected: '', installs: [] }, loaded, scanning, installs = [], mutations = Promise.resolve();
   const serialize = operation => (...args) => {
     const result = mutations.then(() => operation(...args));
     mutations = result.catch(() => {});
     return result;
   };
   async function load() {
-    if (!loaded) loaded = (async () => { try { const value = JSON.parse(await readFile(settingsFile, 'utf8')); settings = { folders: Array.isArray(value.folders) ? value.folders.filter(item => typeof item?.id === 'string' && typeof item?.path === 'string' && path.isAbsolute(item.path)).slice(0, 8) : [], selected: typeof value.selected === 'string' ? value.selected : '' }; } catch { /* initial settings */ } })();
+    if (!loaded) loaded = (async () => {
+      try {
+        const value = JSON.parse(await readFile(settingsFile, 'utf8'));
+        settings = {
+          folders: Array.isArray(value.folders) ? value.folders.filter(item => typeof item?.id === 'string' && typeof item?.path === 'string' && path.isAbsolute(item.path)).slice(0, 8) : [],
+          selected: typeof value.selected === 'string' ? value.selected : '',
+          installs: Array.isArray(value.installs) ? value.installs.filter(item => typeof item?.path === 'string' && path.isAbsolute(item.path)).slice(0, 16) : [],
+        };
+        if (!installs.length && settings.installs.length) {
+          const valid = [];
+          for (const item of settings.installs) {
+            if ((await stat(item.path).catch(() => null))?.isFile()) valid.push(item);
+          }
+          if (valid.length) installs = valid;
+        }
+      } catch { /* initial settings */ }
+    })();
     await loaded;
   }
   async function save(next) { await mkdir(path.dirname(settingsFile), { recursive: true }); await writeFile(settingsFile + '.tmp', JSON.stringify(next)); await rename(settingsFile + '.tmp', settingsFile); settings = next; }
   const snapshot = () => ({ folders: settings.folders, installs, selected: installs.some(item => item.path === settings.selected) ? settings.selected : installs[0]?.path || '' });
-  async function scan() { await load(); if (!scanning) scanning = discover(settings.selected ? [settings.selected] : []).then(value => { installs = value; return snapshot(); }).finally(() => { scanning = null; }); return scanning; }
+  async function scan(mode) {
+    await load();
+    if (mode !== 'force' && installs.length) return snapshot();
+    if (!scanning) {
+      scanning = discover(settings.selected ? [settings.selected] : [])
+        .then(async value => {
+          installs = value;
+          await save({ ...settings, installs: value }).catch(() => {});
+          return snapshot();
+        })
+        .finally(() => { scanning = null; });
+    }
+    return scanning;
+  }
   return {
     scan,
     addFolder: serialize(async () => { await load(); if (settings.folders.length >= 8) throw new Error('最多设置八个自定义文件夹。'); const folder = await chooseDirectory(); if (folder && !settings.folders.some(item => item.path.toLowerCase() === folder.toLowerCase())) await save({ ...settings, folders: [...settings.folders, { id: randomUUID(), name: path.basename(folder) || folder, path: folder }] }); return snapshot(); }),

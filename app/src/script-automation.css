@@ -29,3 +29,379 @@
 .bos-music-analysis-context{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:18px}.bos-music-analysis-context span{padding:6px 10px;border:1px solid var(--ui-border);border-radius:var(--ui-control);background:var(--ui-input);font-size:11px;color:var(--ui-muted)}.bos-music-analysis-keywords{overflow-wrap:anywhere}.bos-music-analysis-panel .bos-library-analyze{flex-wrap:wrap;margin-top:16px}.bos-music-analysis-panel .bos-library-heading>.bos-script-actions{align-items:center}
 
 .bos-local-match-settings{margin-top:18px;padding:18px;border:1px solid var(--ui-border);border-radius:var(--ui-control);background:var(--ui-input)}.bos-local-match-settings h4{margin:0;font-size:14px}.bos-local-match-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px}.bos-local-match-grid label{margin-bottom:6px}.bos-local-match-settings .bos-script-footnote{margin-bottom:0}@media(max-width:700px){.bos-local-match-grid{grid-template-columns:1fr}}
+
+/* v1.3.1 Motion & Hierarchical UI Upgrade */
+@keyframes xm-fade-slide-up {
+  from { opacity: 0; transform: translateY(10px) scale(0.992); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes xm-pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ui-accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 6px transparent; }
+}
+.main-content > section,
+.bos-script-group,
+.bos-library,
+.bos-script-queue,
+.bos-jy-panel,
+.bos-web-ai-bar,
+.bos-usage {
+  animation: xm-fade-slide-up 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  box-shadow: var(--ui-shadow), inset 0 1px 0 color-mix(in srgb, var(--ui-text) 5%, transparent);
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), border-color 200ms ease, box-shadow 220ms ease;
+}
+
+/* Workspace Hierarchical View Switcher */
+.bos-workspace-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--ui-input);
+  border: 1px solid var(--ui-border);
+}
+.bos-workspace-tabs button {
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  color: var(--ui-muted) !important;
+  padding: 6px 13px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  transition: all 200ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+.bos-workspace-tabs button:hover {
+  color: var(--ui-text) !important;
+}
+.bos-workspace-tabs button[aria-selected="true"] {
+  background: var(--ui-accent) !important;
+  color: var(--ui-on-accent) !important;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--ui-accent) 30%, transparent);
+}
+.bos-script[data-view-mode="script"] .bos-view-library,
+.bos-script[data-view-mode="script"] .bos-view-queue,
+.bos-script[data-view-mode="library"] .bos-view-script,
+.bos-script[data-view-mode="library"] .bos-view-queue,
+.bos-script[data-view-mode="queue"] .bos-view-script,
+.bos-script[data-view-mode="queue"] .bos-view-library {
+  display: none !important;
+}
+.bos-view-section {
+  animation: xm-fade-slide-up 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Compact 4-Card Quick Start Drawer (UsageGuide.tsx) */
+.bos-usage {
+  padding: 16px 20px;
+}
+.bos-usage-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bos-usage-pill {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+}
+.bos-usage-drawer summary {
+  margin-top: 10px;
+  font-weight: 600;
+  color: var(--ui-accent);
+  user-select: none;
+  transition: opacity 160ms;
+}
+.bos-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+.bos-usage-card {
+  padding: 14px;
+  border-radius: var(--ui-control);
+  background: var(--ui-input);
+  border: 1px solid var(--ui-border);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms;
+}
+.bos-usage-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--ui-accent);
+}
+.bos-usage-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.bos-usage-step b {
+  font-size: 10px;
+  color: var(--ui-accent);
+  background: var(--ui-soft);
+  padding: 3px 7px;
+  border-radius: 999px;
+}
+.bos-usage-step strong {
+  font-size: 13px;
+}
+.bos-usage-card p {
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 0;
+}
+@media (max-width: 1100px) {
+  .bos-usage-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .bos-usage-grid { grid-template-columns: 1fr; }
+}
+
+/* Sleek Inline PeriodKeeper Toolbar (PeriodKeeper.tsx) */
+.bos-period-bar {
+  padding: 10px 14px;
+  margin: 0 0 14px;
+}
+.bos-period-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.bos-period-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.bos-period-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ui-muted);
+}
+.bos-period-dot[data-ready="true"] {
+  background: var(--ui-accent);
+  animation: xm-pulse-dot 2.4s infinite;
+}
+.bos-period-pill small {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+  font-size: 10px;
+}
+
+/* Unified Command Bar for WebAIStudio (WebAIStudio.tsx) */
+.bos-web-ai-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius);
+}
+.bos-web-ai-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+  flex: 1;
+}
+.bos-web-ai-meta strong {
+  font-size: 13px;
+}
+.bos-web-ai-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+  font-size: 10px;
+  font-weight: 600;
+}
+.bos-web-ai-url {
+  color: var(--ui-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.bos-web-ai-slot {
+  height: clamp(460px, calc(100vh - 280px), 960px);
+  border-radius: var(--ui-radius);
+}
+
+/* Bento Grid & Hotkey Pills for JianyingStudio (JianyingStudio.tsx) */
+.bos-jy-hotkeys {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bos-jy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--ui-input);
+  border: 1px solid var(--ui-border);
+  font-size: 11px;
+  color: var(--ui-muted);
+}
+.bos-jy-pill kbd {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--ui-accent);
+  background: var(--ui-soft);
+  padding: 2px 6px;
+  border-radius: 5px;
+}
+@media (min-width: 1240px) {
+  .bos-jy-panels {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+  .bos-jy-panels > .bos-jy-panel:first-child {
+    grid-column: 1 / -1;
+  }
+}
+.bos-jy-panel:hover {
+  border-color: color-mix(in srgb, var(--ui-accent) 40%, var(--ui-border));
+}
+
+/* MusicLibrary Count Chip (MusicLibrary.tsx) */
+.bos-library-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+  vertical-align: middle;
+}
+.bos-library-match,
+.bos-script-job {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms ease;
+}
+.bos-library-match:hover,
+.bos-script-job:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ui-accent) 45%, var(--ui-border));
+}
+.bos-jianying,
+.bos-watermark,
+.bos-web-ai,
+.bos-script {
+  contain: layout style;
+  will-change: opacity, transform;
+}
+
+/* Integrated Custom Titlebar & Auto-Updater (v1.4.0) */
+.bos-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 144px 0 18px;
+  background: color-mix(in srgb, var(--ui-bg, #090b0c) 82%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-border, #242829) 55%, transparent);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.bos-titlebar-drag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--ui-muted, #8a9490);
+}
+.bos-titlebar-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ui-accent, #c5f54f);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--ui-accent, #c5f54f) 55%, transparent);
+}
+.bos-titlebar-brand {
+  font-weight: 700;
+  color: var(--ui-text, #f3f5f2);
+  letter-spacing: -0.02em;
+}
+.bos-titlebar-version {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ui-soft, #1b221a);
+  color: var(--ui-accent, #c5f54f);
+  font-variant-numeric: tabular-nums;
+}
+.bos-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+.bos-update-pill {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border, #252b2c);
+  background: var(--ui-surface, #111415);
+  color: var(--ui-muted, #a1a8a5);
+  cursor: pointer;
+  transition: all 180ms ease;
+}
+.bos-update-pill:hover:not(:disabled) {
+  border-color: var(--ui-accent, #c5f54f);
+  color: var(--ui-text, #f3f5f2);
+}
+.bos-update-pill.is-available,
+.bos-update-pill.is-ready {
+  background: var(--ui-accent, #c5f54f);
+  border-color: var(--ui-accent, #c5f54f);
+  color: var(--ui-on-accent, #090b0c);
+  box-shadow: 0 2px 12px color-mix(in srgb, var(--ui-accent, #c5f54f) 35%, transparent);
+}
+.bos-update-pill.is-downloading {
+  border-color: var(--ui-accent, #c5f54f);
+  color: var(--ui-accent, #c5f54f);
+}
+.bos-update-pill.is-error {
+  border-color: var(--ui-warning, #f59e0b);
+  color: var(--ui-warning, #f59e0b);
+}
+.sidebar {
+  padding-top: 52px !important;
+}
+.main-column {
+  padding-top: 36px !important;
+}
+.bos-quickrail {
+  padding-top: 48px !important;
+}
+.bos-web-ai-overlay {
+  top: 46px !important;
+}
