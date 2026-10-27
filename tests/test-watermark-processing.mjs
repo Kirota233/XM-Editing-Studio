@@ -154,4 +154,19 @@ test('Native WatermarkStudio UI and Bottom-Right Radial BatchTray render without
   assert.match(trayText, /配乐/);
   assert.match(trayText, /句号/);
   assert.match(trayText, /AI 台/);
+
+  // 3. Verify ScriptAutomation removes 全景视图 and elevates the 3 stage tabs to .bos-top-stage-bar
+  globalThis.window = { location: { origin: 'http://127.0.0.1:37651' } };
+  const scriptTree = ui.ScriptAutomation({ providers: [], automation: { queue: {}, jobs: [], running: false }, onNavigate: () => {} });
+  const scriptText = textOf(scriptTree);
+  assert.doesNotMatch(scriptText, /全景视图/, '全景视图 must be removed');
+  const stageTabs = nodes(scriptTree, n => n.type === 'button' && String(n.props.className || '').includes('bos-stage-tab'));
+  assert.equal(stageTabs.length, 3, 'Must expose 3 prominent top-level stage tabs');
+
+  // 4. Verify GlobalThemePicker is mounted in providers (接口与主题) and not in workspace, and companionDock launches at startup
+  const buildUpgradeSrc = await fs.readFile('app/scripts/build-upgrade.mjs', 'utf8');
+  assert.match(buildUpgradeSrc, /d==="providers"&&s\.jsx\(BOSMusicUpgrade\.GlobalThemePicker/);
+  assert.match(buildUpgradeSrc, /label:"接口与主题",sub:"API 配置 · 视觉主题"/);
+  const mainSrc = await fs.readFile('app/electron/main.mjs', 'utf8');
+  assert.match(mainSrc, /await companionDock\.show\(false\)/);
 });

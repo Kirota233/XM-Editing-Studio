@@ -1545,4 +1545,97 @@
   border-color: color-mix(in srgb, var(--ui-accent, #c5f54f) 45%, transparent) !important;
 }
 
+/* =========================================================================
+   Top-Level Prominent 3-Stage Navigation Bar (.bos-top-stage-bar)
+   ========================================================================= */
+.bos-top-stage-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 920px) {
+  .bos-top-stage-bar {
+    grid-template-columns: 1fr;
+  }
+}
+.bos-script button.bos-stage-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  padding: 16px 18px !important;
+  border-radius: var(--ui-radius, 16px) !important;
+  border: 1px solid color-mix(in srgb, var(--ui-border, #252b2c) 80%, rgba(255, 255, 255, 0.14)) !important;
+  background: color-mix(in srgb, var(--ui-surface, #111415) 74%, transparent) !important;
+  backdrop-filter: blur(22px) saturate(185%);
+  -webkit-backdrop-filter: blur(22px) saturate(185%);
+  color: var(--ui-text, #f3f5f2) !important;
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  transition:
+    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    border-color 200ms ease,
+    background 200ms ease,
+    box-shadow 240ms ease !important;
+}
+.bos-script button.bos-stage-tab:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ui-accent, #c5f54f) 55%, var(--ui-border, #252b2c)) !important;
+}
+.bos-script button.bos-stage-tab.is-active {
+  border-color: var(--ui-accent, #c5f54f) !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--ui-accent, #c5f54f) 18%, var(--ui-surface, #111415)),
+    color-mix(in srgb, var(--ui-surface, #111415) 84%, transparent)
+  ) !important;
+  box-shadow:
+    0 14px 32px color-mix(in srgb, var(--ui-accent, #c5f54f) 18%, rgba(0, 0, 0, 0.32)),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.bos-stage-num {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: var(--ui-soft, #1b221a);
+  color: var(--ui-accent, #c5f54f);
+  border: 1px solid color-mix(in srgb, var(--ui-accent, #c5f54f) 35%, transparent);
+  flex-shrink: 0;
+  transition: all 200ms ease;
+}
+.bos-script button.bos-stage-tab.is-active .bos-stage-num {
+  background: var(--ui-accent, #c5f54f);
+  color: var(--ui-on-accent, #090b0c);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--ui-accent, #c5f54f) 40%, transparent);
+}
+.bos-stage-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.bos-stage-text strong {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--ui-text, #f3f5f2);
+}
+.bos-stage-text small {
+  font-size: 11px;
+  color: var(--ui-muted, #a1a8a5);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
 

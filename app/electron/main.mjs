@@ -394,6 +394,7 @@ if (!hasSingleInstance) {
     logStartup(`local service listening on ${APP_HOST}:${APP_PORT}`);
     setupCompanionDock();
     await createMainWindow();
+    await companionDock.show(false).catch(() => {});
     setupSystemTray();
     logStartup("main window loaded");
     setTimeout(() => {

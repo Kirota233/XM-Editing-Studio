@@ -18,24 +18,32 @@ const DEFAULT_STATE: UpdaterState = {
   progress: 0,
 };
 
-export function TitleBar() {
+export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) {
   const [state, setState] = i.useState(DEFAULT_STATE as UpdaterState);
   const api = (globalThis as any).blackObsidian;
 
   i.useEffect(() => {
-    if (!api?.getUpdaterStatus) return;
     let alive = true;
-    api.getUpdaterStatus().then((s: UpdaterState) => {
+    api?.getUpdaterStatus?.().then((s: UpdaterState) => {
       if (alive && s) setState(s);
     }).catch(() => {});
-    const off = api.onUpdaterState?.((s: UpdaterState) => {
+    const off = api?.onUpdaterState?.((s: UpdaterState) => {
       if (alive && s) setState(s);
+    });
+    const offNav = api?.onTrayNavigate?.((target: string) => {
+      if (!alive || !target) return;
+      if (target === 'script') {
+        onNavigate?.('workspace');
+      } else {
+        onNavigate?.(target);
+      }
     });
     return () => {
       alive = false;
       if (typeof off === 'function') off();
+      if (typeof offNav === 'function') offNav();
     };
-  }, []);
+  }, [onNavigate]);
 
   const handleAction = () => {
     if (!api?.updaterAction) return;

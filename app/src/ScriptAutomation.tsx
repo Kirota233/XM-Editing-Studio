@@ -140,7 +140,7 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
   const [recovery, setRecovery] = i.useState<Record<string, string>>({});
   const [confirm, setConfirm] = i.useState('');
   const [opened, setOpened] = i.useState('');
-  const [viewMode, setViewMode] = i.useState<'all' | 'script' | 'library' | 'queue'>('all');
+  const [viewMode, setViewMode] = i.useState<'script' | 'library' | 'queue'>('script');
 
   const models: ModelOption[] = providers.flatMap(provider =>
     (provider.models || []).map(model => ({
@@ -374,7 +374,52 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
 
   return (
     <section className="bos-script" data-view-mode={viewMode} aria-labelledby="bos-script-title">
-      <div className="bos-script-group">
+      {/* Top-Level Prominent 3-Stage Navigation Bar */}
+      <nav className="bos-top-stage-bar" role="tablist" aria-label="剧本与配乐核心工作台分栏">
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${viewMode === 'script' ? 'is-active' : ''}`}
+          aria-selected={viewMode === 'script'}
+          onClick={() => setViewMode('script')}
+        >
+          <span className="bos-stage-num">01</span>
+          <div className="bos-stage-text">
+            <strong>字幕与生成</strong>
+            <small>提取对白字幕 · AI 分析剧本与生成配乐</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${viewMode === 'library' ? 'is-active' : ''}`}
+          aria-selected={viewMode === 'library'}
+          onClick={() => setViewMode('library')}
+        >
+          <span className="bos-stage-num">02</span>
+          <div className="bos-stage-text">
+            <strong>本地曲库</strong>
+            <small>本地音乐索引 · 剧情关键词匹配与直拖剪映</small>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          role="tab"
+          className={`bos-stage-tab ${viewMode === 'queue' ? 'is-active' : ''}`}
+          aria-selected={viewMode === 'queue'}
+          onClick={() => setViewMode('queue')}
+        >
+          <span className="bos-stage-num">03</span>
+          <div className="bos-stage-text">
+            <strong>任务队列 ({jobs.length})</strong>
+            <small>{running ? '配乐队列运行中' : `已完成 ${complete}/${jobs.length} 项 · 剪映素材导出`}</small>
+          </div>
+        </button>
+      </nav>
+
+      <div className="bos-script-group bos-view-section bos-view-script">
         <header className="bos-script-heading">
           <div>
             <span className="bos-script-eyebrow">SCRIPT TO SOUND</span>
@@ -382,20 +427,6 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
             <p>自动提取对白字幕 · AI 剧情拆解 · 本地曲库匹配与 Suno 生成</p>
           </div>
           <div className="bos-panel-heading-actions">
-            <div className="bos-workspace-tabs" role="tablist" aria-label="工作区模块切换">
-              <button type="button" role="tab" aria-selected={viewMode === 'all'} onClick={() => setViewMode('all')}>
-                全景视图
-              </button>
-              <button type="button" role="tab" aria-selected={viewMode === 'script'} onClick={() => setViewMode('script')}>
-                01 字幕与生成
-              </button>
-              <button type="button" role="tab" aria-selected={viewMode === 'library'} onClick={() => setViewMode('library')}>
-                02 本地曲库
-              </button>
-              <button type="button" role="tab" aria-selected={viewMode === 'queue'} onClick={() => setViewMode('queue')}>
-                03 任务队列 ({jobs.length})
-              </button>
-            </div>
             <span className="bos-script-badge">{running ? '队列运行中' : '就绪'}</span>
             <button
               type="button"
@@ -418,15 +449,7 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
           </div>
         </header>
 
-        <div id="bos-script-body" className="bos-view-section bos-view-script" hidden={collapsed}>
-          <ol className="bos-script-steps">
-            {stages.map((stage, index) => (
-              <li key={stage}>
-                <b>{String(index + 1).padStart(2, '0')}</b>
-                <span>{stage}</span>
-              </li>
-            ))}
-          </ol>
+        <div id="bos-script-body" hidden={collapsed}>
           {(error || queue.loadError || projects.storageError) && (
             <div className="bos-script-alert" role="alert">
               {error || queue.loadError || projects.storageError}

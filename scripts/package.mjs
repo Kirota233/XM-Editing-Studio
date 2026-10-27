@@ -50,8 +50,8 @@ try {
     extraResource: ['.generated/native/helpers'],
   });
 
-  // Prune unused Chromium locales and unused WebGPU compiler DLLs to reduce package size
-  const keepLocales = new Set(['zh-CN.pak', 'zh-TW.pak', 'en-US.pak', 'en-GB.pak', 'es.pak', 'es-419.pak']);
+  // Prune unused Chromium locales and unused software-rasterizer / compiler DLLs to reduce package size
+  const keepLocales = new Set(['zh-CN.pak', 'en-US.pak']);
   for (const outDir of result) {
     const localesDir = path.join(outDir, 'locales');
     try {
@@ -63,7 +63,15 @@ try {
       }
     } catch { /* ignore */ }
 
-    for (const bloatFile of ['LICENSES.chromium.html', 'dxcompiler.dll', 'dxil.dll']) {
+    for (const bloatFile of [
+      'LICENSES.chromium.html',
+      'dxcompiler.dll',
+      'dxil.dll',
+      'vk_swiftshader.dll',
+      'vulkan-1.dll',
+      'vk_swiftshader_icd.json',
+      'd3dcompiler_47.dll',
+    ]) {
       await fs.rm(path.join(outDir, bloatFile), { force: true }).catch(() => {});
     }
   }

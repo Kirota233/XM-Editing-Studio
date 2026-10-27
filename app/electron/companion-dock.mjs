@@ -1,7 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 
-const COMPACT_SIZE = { width: 96, height: 96 };
-const EXPANDED_SIZE = { width: 336, height: 448 };
+const COMPACT_SIZE = { width: 210, height: 210 };
+const EXPANDED_SIZE = { width: 348, height: 472 };
 
 export function createCompanionDock({
   preloadPath,
@@ -16,14 +16,14 @@ export function createCompanionDock({
   let autoDock = true;
   let visible = false;
   let pollTimer = null;
-  let manualPosition = null; // { x, y } when user drags manually
+  let manualPosition = null;
 
   function buildCompanionHtml() {
     const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
-<title>XM 剪映伴侣悬浮窗</title>
+<title>XM 灵动伴侣悬浮窗</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
   html, body {
@@ -38,72 +38,134 @@ export function createCompanionDock({
     width: 100%;
     height: 100%;
     display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: center;
     padding: 8px;
   }
 
-  /* Cute Mascot Orb (Compact Mode) */
+  /* =========================================================
+     Compact Mode: Cute Frosted-Glass Mascot + Radial Satellites
+     ========================================================= */
+  .radial-stage {
+    position: relative;
+    width: 194px;
+    height: 194px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .root.is-expanded .radial-stage {
+    display: none;
+  }
+
+  /* Surrounding Radial Satellite Nodes */
+  .sat {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
+    background: linear-gradient(145deg, rgba(24, 32, 38, 0.82), rgba(12, 16, 20, 0.9));
+    backdrop-filter: blur(18px) saturate(190%);
+    box-shadow:
+      0 8px 20px rgba(0, 0, 0, 0.45),
+      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+    color: #f1f5f9;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    cursor: pointer;
+    -webkit-app-region: no-drag;
+    transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 180ms ease, background 180ms ease;
+    z-index: 2;
+  }
+  .sat i {
+    font-style: normal;
+    font-size: 13px;
+    line-height: 1;
+  }
+  .sat span {
+    font-size: 9px;
+    font-weight: 700;
+    color: #cbd5e1;
+  }
+  .sat.active {
+    border-color: #c5f54f;
+    background: linear-gradient(145deg, rgba(197, 245, 79, 0.26), rgba(15, 23, 42, 0.92));
+  }
+  .sat.active span {
+    color: #c5f54f;
+  }
+  /* 4 Cardinal/Diagonal Radial Positions around Center Orb */
+  .sat-top    { transform: translate(0px, -68px); }
+  .sat-left   { transform: translate(-68px, 0px); }
+  .sat-right  { transform: translate(68px, 0px); }
+  .sat-bottom { transform: translate(0px, 68px); }
+
+  .sat-top:hover    { transform: translate(0px, -72px) scale(1.08); border-color: #c5f54f; }
+  .sat-left:hover   { transform: translate(-72px, 0px) scale(1.08); border-color: #c5f54f; }
+  .sat-right:hover  { transform: translate(72px, 0px) scale(1.08); border-color: #c5f54f; }
+  .sat-bottom:hover { transform: translate(0px, 72px) scale(1.08); border-color: #c5f54f; }
+
+  /* Center Cute Mascot Pet */
   .mascot-wrap {
     position: relative;
-    width: 78px;
-    height: 78px;
+    width: 76px;
+    height: 76px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     -webkit-app-region: drag;
     animation: floatBob 3.2s ease-in-out infinite;
-  }
-  .root.is-expanded .mascot-wrap {
-    display: none;
+    z-index: 4;
   }
   @keyframes floatBob {
     0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-5px); }
+    50% { transform: translateY(-4px); }
   }
   .mascot-halo {
     position: absolute;
     inset: 2px;
     border-radius: 26px;
-    background: radial-gradient(circle at 30% 20%, rgba(197, 245, 79, 0.35), rgba(56, 189, 248, 0.18) 60%, rgba(15, 23, 42, 0.85));
-    backdrop-filter: blur(20px) saturate(190%);
-    border: 1.5px solid rgba(255, 255, 255, 0.26);
+    background: radial-gradient(circle at 30% 20%, rgba(197, 245, 79, 0.38), rgba(56, 189, 248, 0.22) 60%, rgba(15, 23, 42, 0.88));
+    backdrop-filter: blur(22px) saturate(195%);
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
     box-shadow:
-      0 12px 28px rgba(0, 0, 0, 0.48),
-      inset 0 1px 1px rgba(255, 255, 255, 0.35);
+      0 12px 28px rgba(0, 0, 0, 0.52),
+      inset 0 1px 1px rgba(255, 255, 255, 0.38);
     transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), border-color 200ms ease;
   }
   .mascot-wrap:hover .mascot-halo {
     transform: scale(1.06);
-    border-color: rgba(197, 245, 79, 0.75);
+    border-color: rgba(197, 245, 79, 0.85);
   }
-  /* Cute Ears */
   .ear {
     position: absolute;
-    top: -3px;
+    top: -4px;
     width: 18px;
     height: 18px;
     border-radius: 6px 14px 4px 12px;
-    background: linear-gradient(135deg, rgba(197, 245, 79, 0.85), rgba(56, 189, 248, 0.55));
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: linear-gradient(135deg, rgba(197, 245, 79, 0.9), rgba(56, 189, 248, 0.6));
+    border: 1px solid rgba(255, 255, 255, 0.45);
     z-index: 0;
     transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .ear.left { left: 10px; transform: rotate(-18deg); }
   .ear.right { right: 10px; transform: rotate(28deg) scaleX(-1); }
-  .mascot-wrap:hover .ear.left { transform: rotate(-28deg) translateY(-2px); }
-  .mascot-wrap:hover .ear.right { transform: rotate(38deg) scaleX(-1) translateY(-2px); }
+  .mascot-wrap:hover .ear.left { transform: rotate(-30deg) translateY(-2px); }
+  .mascot-wrap:hover .ear.right { transform: rotate(40deg) scaleX(-1) translateY(-2px); }
 
-  /* Cute Face */
   .face {
     position: relative;
     z-index: 2;
-    width: 52px;
-    height: 42px;
+    width: 50px;
+    height: 40px;
     border-radius: 16px;
-    background: rgba(11, 15, 19, 0.78);
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(11, 15, 19, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -113,16 +175,16 @@ export function createCompanionDock({
   }
   .eyes {
     display: flex;
-    gap: 12px;
+    gap: 11px;
     align-items: center;
   }
   .eye {
-    width: 7px;
-    height: 9px;
+    width: 6.5px;
+    height: 8.5px;
     border-radius: 999px;
     background: #c5f54f;
-    box-shadow: 0 0 8px rgba(197, 245, 79, 0.8);
-    animation: blink 4.2s infinite;
+    box-shadow: 0 0 8px rgba(197, 245, 79, 0.85);
+    animation: blink 4s infinite;
   }
   @keyframes blink {
     0%, 94%, 98%, 100% { transform: scaleY(1); }
@@ -130,56 +192,58 @@ export function createCompanionDock({
   }
   .blush {
     position: absolute;
-    top: 22px;
+    top: 21px;
     width: 7px;
     height: 4px;
     border-radius: 999px;
-    background: rgba(244, 114, 182, 0.55);
+    background: rgba(244, 114, 182, 0.6);
   }
   .blush.left { left: 6px; }
   .blush.right { right: 6px; }
   .mouth {
-    width: 10px;
-    height: 5px;
+    width: 9px;
+    height: 4.5px;
     border-bottom: 2px solid #e2e8f0;
     border-radius: 0 0 999px 999px;
   }
   .badge {
     position: absolute;
-    bottom: -2px;
+    bottom: -3px;
     padding: 1px 7px;
     border-radius: 999px;
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 700;
-    background: rgba(15, 23, 42, 0.9);
+    background: rgba(15, 23, 42, 0.92);
     color: #c5f54f;
-    border: 1px solid rgba(197, 245, 79, 0.45);
+    border: 1px solid rgba(197, 245, 79, 0.5);
     z-index: 3;
     -webkit-app-region: no-drag;
   }
 
-  /* Expanded Frosted Glass Panel */
+  /* =========================================================
+     Expanded Mode: Frosted Glass Companion Control Panel
+     ========================================================= */
   .glass-panel {
     display: none;
     width: 100%;
     height: 100%;
     border-radius: 22px;
-    background: linear-gradient(155deg, rgba(20, 26, 31, 0.84) 0%, rgba(10, 14, 17, 0.92) 100%);
-    backdrop-filter: blur(28px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: linear-gradient(155deg, rgba(22, 29, 35, 0.82) 0%, rgba(10, 14, 18, 0.9) 100%);
+    backdrop-filter: blur(28px) saturate(195%);
+    border: 1px solid rgba(255, 255, 255, 0.22);
     box-shadow:
-      0 20px 50px rgba(0, 0, 0, 0.65),
-      inset 0 1px 0 rgba(255, 255, 255, 0.25);
+      0 22px 54px rgba(0, 0, 0, 0.65),
+      inset 0 1px 0 rgba(255, 255, 255, 0.28);
     padding: 14px;
     flex-direction: column;
     gap: 10px;
-    animation: panelPop 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    animation: panelPop 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
   .root.is-expanded .glass-panel {
     display: flex;
   }
   @keyframes panelPop {
-    from { opacity: 0; transform: scale(0.86) translateY(-10px); }
+    from { opacity: 0; transform: scale(0.84) translateY(-8px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
   .panel-head {
@@ -188,7 +252,7 @@ export function createCompanionDock({
     justify-content: space-between;
     gap: 8px;
     padding-bottom: 8px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
     -webkit-app-region: drag;
   }
   .head-left {
@@ -200,8 +264,8 @@ export function createCompanionDock({
     width: 30px;
     height: 30px;
     border-radius: 10px;
-    background: linear-gradient(135deg, rgba(197, 245, 79, 0.28), rgba(56, 189, 248, 0.22));
-    border: 1px solid rgba(197, 245, 79, 0.45);
+    background: linear-gradient(135deg, rgba(197, 245, 79, 0.3), rgba(56, 189, 248, 0.25));
+    border: 1px solid rgba(197, 245, 79, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -226,7 +290,7 @@ export function createCompanionDock({
     height: 26px;
     border-radius: 8px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.07);
     color: #cbd5e1;
     cursor: pointer;
     font-size: 12px;
@@ -244,8 +308,8 @@ export function createCompanionDock({
     justify-content: space-between;
     padding: 7px 10px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     font-size: 11.5px;
   }
   .dock-status {
@@ -266,7 +330,7 @@ export function createCompanionDock({
   .pill-toggle {
     padding: 3px 9px;
     border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(255, 255, 255, 0.08);
     color: #e2e8f0;
     font-size: 10.5px;
@@ -274,7 +338,7 @@ export function createCompanionDock({
     cursor: pointer;
   }
   .pill-toggle.active {
-    background: rgba(197, 245, 79, 0.22);
+    background: rgba(197, 245, 79, 0.24);
     border-color: #c5f54f;
     color: #c5f54f;
   }
@@ -282,8 +346,8 @@ export function createCompanionDock({
   .card {
     padding: 10px 11px;
     border-radius: 14px;
-    background: rgba(255, 255, 255, 0.045);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.055);
+    border: 1px solid rgba(255, 255, 255, 0.11);
     display: flex;
     flex-direction: column;
     gap: 7px;
@@ -318,8 +382,8 @@ export function createCompanionDock({
   .act-btn {
     padding: 7px 9px;
     border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background: rgba(255, 255, 255, 0.07);
     color: #f1f5f9;
     font-size: 11.5px;
     font-weight: 600;
@@ -328,7 +392,7 @@ export function createCompanionDock({
   }
   .act-btn:hover {
     border-color: #c5f54f;
-    background: rgba(197, 245, 79, 0.14);
+    background: rgba(197, 245, 79, 0.16);
     transform: translateY(-1px);
   }
   .act-btn.primary {
@@ -346,21 +410,40 @@ export function createCompanionDock({
 </head>
 <body>
   <div id="root" class="root">
-    <!-- Compact Cute Mascot -->
-    <div id="mascot" class="mascot-wrap" title="点击展开毛玻璃伴侣面板 · 按住边缘可拖动">
-      <div class="ear left"></div>
-      <div class="ear right"></div>
-      <div class="mascot-halo"></div>
-      <div id="mascot-face" class="face">
-        <div class="eyes">
-          <div class="eye"></div>
-          <div class="eye"></div>
+    <!-- Compact Mode: Cute Mascot + 4 Surrounding Radial Satellites -->
+    <div class="radial-stage">
+      <button id="sat-wm" class="sat sat-top" title="批量样片水印">
+        <i>💧</i>
+        <span id="sat-wm-txt">水印</span>
+      </button>
+      <button id="sat-jy" class="sat sat-left" title="剪映批量自动化">
+        <i>🎬</i>
+        <span>剪映</span>
+      </button>
+      <button id="sat-script" class="sat sat-right" title="剧本与配乐工作台">
+        <i>🎵</i>
+        <span>配乐</span>
+      </button>
+      <button id="sat-period" class="sat sat-bottom" title="一键切换剪贴板句号守护">
+        <i>🛡️</i>
+        <span id="sat-period-txt">句号</span>
+      </button>
+
+      <div id="mascot" class="mascot-wrap" title="点击展开毛玻璃控制面板 · 按住光环可随意拖动">
+        <div class="ear left"></div>
+        <div class="ear right"></div>
+        <div class="mascot-halo"></div>
+        <div id="mascot-face" class="face">
+          <div class="eyes">
+            <div class="eye"></div>
+            <div class="eye"></div>
+          </div>
+          <div class="blush left"></div>
+          <div class="blush right"></div>
+          <div class="mouth"></div>
         </div>
-        <div class="blush left"></div>
-        <div class="blush right"></div>
-        <div class="mouth"></div>
+        <div id="mascot-badge" class="badge">灵动球</div>
       </div>
-      <div id="mascot-badge" class="badge">伴侣</div>
     </div>
 
     <!-- Expanded Frosted Glass Panel -->
@@ -369,13 +452,13 @@ export function createCompanionDock({
         <div class="head-left">
           <div class="mini-pet">🐾</div>
           <div class="head-title">
-            <h4>XM 灵动伴侣挂件</h4>
-            <p id="jy-window-label">支持剪映窗口自动磁吸</p>
+            <h4>XM 桌面灵动伴侣</h4>
+            <p id="jy-window-label">独立桌面悬浮 · 支持剪映磁吸</p>
           </div>
         </div>
         <div class="head-btns">
           <button id="btn-collapse" class="icon-btn" title="收起为可爱悬浮球">−</button>
-          <button id="btn-hide" class="icon-btn" title="隐藏伴侣悬浮窗">✕</button>
+          <button id="btn-hide" class="icon-btn" title="最小化到系统托盘">✕</button>
         </div>
       </div>
 
@@ -434,6 +517,10 @@ export function createCompanionDock({
     const api = window.blackObsidian;
     const rootEl = document.getElementById('root');
     const badgeEl = document.getElementById('mascot-badge');
+    const satWm = document.getElementById('sat-wm');
+    const satWmTxt = document.getElementById('sat-wm-txt');
+    const satPeriod = document.getElementById('sat-period');
+    const satPeriodTxt = document.getElementById('sat-period-txt');
     const jyWindowLabel = document.getElementById('jy-window-label');
     const dockDot = document.getElementById('dock-dot');
     const dockText = document.getElementById('dock-text');
@@ -458,25 +545,33 @@ export function createCompanionDock({
         jyWindowLabel.textContent = autoDock ? '✓ 已吸附剪映窗口右上角' : '已检测到剪映运行中';
         dockText.textContent = '剪映窗口已连接';
       } else {
-        jyWindowLabel.textContent = '未检测到剪映窗口 · 桌面自由悬浮';
+        jyWindowLabel.textContent = '独立桌面悬浮 · 支持剪映磁吸';
         dockText.textContent = autoDock ? '等待剪映启动自动吸附' : '桌面自由拖动模式';
       }
 
       const wm = s.watermark || {};
       if (wm.running) {
         badgeEl.textContent = wm.overallProgress + '%';
+        satWm.className = 'sat sat-top active';
+        satWmTxt.textContent = wm.overallProgress + '%';
         wmMeta.textContent = wm.completedCount + '/' + wm.totalCount + ' (' + wm.overallProgress + '%)';
         wmBar.style.width = wm.overallProgress + '%';
       } else if (wm.totalCount > 0) {
         badgeEl.textContent = wm.completedCount + '/' + wm.totalCount;
+        satWm.className = 'sat sat-top active';
+        satWmTxt.textContent = wm.completedCount + '/' + wm.totalCount;
         wmMeta.textContent = '队列 ' + wm.completedCount + '/' + wm.totalCount;
         wmBar.style.width = wm.overallProgress + '%';
       } else {
-        badgeEl.textContent = s.periodEnabled ? '守护中' : '伴侣';
+        badgeEl.textContent = s.periodEnabled ? '守护中' : '灵动球';
+        satWm.className = 'sat sat-top';
+        satWmTxt.textContent = '水印';
         wmMeta.textContent = '空闲';
         wmBar.style.width = '0%';
       }
 
+      satPeriod.className = 'sat sat-bottom ' + (s.periodEnabled ? 'active' : '');
+      satPeriodTxt.textContent = s.periodEnabled ? '守护开' : '句号';
       jyMeta.textContent = s.jianyingStatus || '就绪';
       periodMeta.textContent = s.periodEnabled ? '✓ 守护已开启' : '已关闭';
     }
@@ -487,6 +582,19 @@ export function createCompanionDock({
     document.getElementById('mascot-badge').addEventListener('click', () => {
       api?.companionAction?.('expand', true);
     });
+    document.getElementById('sat-wm').addEventListener('click', () => {
+      api?.companionAction?.('navigate', 'watermark');
+    });
+    document.getElementById('sat-jy').addEventListener('click', () => {
+      api?.companionAction?.('navigate', 'jianying');
+    });
+    document.getElementById('sat-script').addEventListener('click', () => {
+      api?.companionAction?.('navigate', 'workspace');
+    });
+    document.getElementById('sat-period').addEventListener('click', () => {
+      api?.companionAction?.('toggle-period');
+    });
+
     document.getElementById('btn-collapse').addEventListener('click', () => {
       api?.companionAction?.('expand', false);
     });
@@ -538,11 +646,11 @@ export function createCompanionDock({
       const display = screen.getPrimaryDisplay();
       const workArea = display.workArea;
       return {
-        x: workArea.x + workArea.width - size.width - 28,
-        y: workArea.y + Math.round(workArea.height * 0.22),
+        x: workArea.x + workArea.width - size.width - 24,
+        y: workArea.y + workArea.height - size.height - 36,
       };
     } catch {
-      return { x: 1200, y: 180 };
+      return { x: 1180, y: 620 };
     }
   }
 
@@ -582,8 +690,8 @@ export function createCompanionDock({
     const jw = snap.jianyingWindow;
     if (jw && jw.found && !jw.minimized && jw.width > 200 && jw.height > 200) {
       const size = currentSize();
-      const targetX = Math.max(0, jw.x + jw.width - size.width - 18);
-      const targetY = Math.max(0, jw.y + 48);
+      const targetX = Math.max(0, jw.x + jw.width - size.width - 14);
+      const targetY = Math.max(0, jw.y + 42);
       const [curX, curY] = win.getPosition();
       if (Math.abs(curX - targetX) > 4 || Math.abs(curY - targetY) > 4) {
         win.setBounds({ x: targetX, y: targetY, width: size.width, height: size.height }, false);
@@ -680,9 +788,9 @@ export function createCompanionDock({
     const nextSize = currentSize();
     if (win && !win.isDestroyed()) {
       const [curX, curY] = win.getPosition();
-      // Keep top-right corner anchored when expanding/collapsing
       const nextX = Math.max(8, curX + (prevSize.width - nextSize.width));
-      win.setBounds({ x: nextX, y: curY, width: nextSize.width, height: nextSize.height }, false);
+      const nextY = Math.max(8, curY + (prevSize.height - nextSize.height));
+      win.setBounds({ x: nextX, y: nextY, width: nextSize.width, height: nextSize.height }, false);
     }
     return await broadcastState();
   }
