@@ -6,7 +6,14 @@ import { packager } from '@electron/packager';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 
-for (const file of ['app/dist/client/index.html', '.generated/native/helpers/PeriodKeeper.exe', 'app/build/jianying/JianYingEngine.exe', 'app/build/jianying/engine.json']) {
+for (const file of [
+  'app/dist/client/index.html',
+  '.generated/native/helpers/PeriodKeeper.exe',
+  'app/build/jianying/JianYingEngine.exe',
+  'app/build/jianying/engine.json',
+  'app/build/watermark/WatermarkEngine.exe',
+  'app/build/watermark/engine.json',
+]) {
   await fs.access(file);
 }
 

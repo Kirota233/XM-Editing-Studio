@@ -280,14 +280,14 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
 
           {/* Extensible Quick-Action Bar */}
           <footer className="bos-tray-ext-bar">
+            <button type="button" onClick={() => api?.companionAction?.('show', true)}>
+              🐾 桌面磁吸精灵
+            </button>
             <button type="button" onClick={() => api?.quickLaunch?.('launch')}>
               🚀 启动剪映
             </button>
             <button type="button" onClick={() => api?.updaterAction?.('check')}>
               🔄 检查更新
-            </button>
-            <button type="button" onClick={() => { onNavigate('providers'); setExpanded(false); }}>
-              ⚙️ 接口与指南
             </button>
           </footer>
         </div>
@@ -354,7 +354,7 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
           <span className="bos-sat-label">AI 台</span>
         </button>
 
-        {/* Central Core Orb */}
+        {/* Central Cute Mascot Core Orb */}
         <button
           type="button"
           className="bos-tray-orb"
@@ -363,8 +363,10 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
             e.preventDefault();
             setRingOpen((v: boolean) => !v);
           }}
-          title="左键打开全局批量任务抽屉 · 右键展开/收起四周快捷环"
+          title="点击展开毛玻璃伴侣面板 · 右键收起/展开四周灵动卫星环"
         >
+          <span className="bos-mascot-ear ear-l" aria-hidden="true" />
+          <span className="bos-mascot-ear ear-r" aria-hidden="true" />
           <svg className="bos-tray-ring-svg" width="60" height="60" viewBox="0 0 60 60">
             <circle
               className="bos-tray-ring-bg"
@@ -386,16 +388,17 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
             />
           </svg>
           <div className="bos-tray-orb-inner">
+            <div className="bos-mascot-face" aria-hidden="true">
+              <span className="bos-mascot-eye" />
+              <span className="bos-mascot-eye" />
+              <span className="bos-mascot-blush blush-l" />
+              <span className="bos-mascot-blush blush-r" />
+              <span className="bos-mascot-mouth" />
+            </div>
             {anyRunning ? (
-              <>
-                <strong className="bos-tray-orb-pct">{ringProgress}%</strong>
-                <span className="bos-tray-orb-sub">运行 {activeTaskCount}</span>
-              </>
+              <strong className="bos-tray-orb-pct">{ringProgress}%</strong>
             ) : (
-              <>
-                <strong className="bos-tray-orb-icon">⚡</strong>
-                <span className="bos-tray-orb-sub">任务托盘</span>
-              </>
+              <span className="bos-tray-orb-sub">灵动球</span>
             )}
           </div>
         </button>

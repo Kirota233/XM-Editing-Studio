@@ -24,8 +24,23 @@ internal static class NativeWin32
         public int Y;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
     [DllImport("user32.dll")]
     public static extern bool SetProcessDPIAware();
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool GetCursorPos(out POINT lpPoint);
@@ -74,6 +89,54 @@ internal static class NativeWin32
         {
             return "";
         }
+    }
+
+    public static Dictionary<string, object> GetJianyingWindowInfo()
+    {
+        try
+        {
+            var procs = Process.GetProcessesByName("JianyingPro");
+            try
+            {
+                foreach (var p in procs)
+                {
+                    IntPtr hwnd = p.MainWindowHandle;
+                    if (hwnd == IntPtr.Zero) continue;
+                    RECT r;
+                    if (!GetWindowRect(hwnd, out r)) continue;
+                    int w = r.Right - r.Left;
+                    int h = r.Bottom - r.Top;
+                    if (w <= 0 || h <= 0) continue;
+                    bool minimized = IsIconic(hwnd);
+                    bool fg = GetForegroundWindow() == hwnd;
+                    return new Dictionary<string, object>
+                    {
+                        { "found", true },
+                        { "minimized", minimized },
+                        { "foreground", fg },
+                        { "x", r.Left },
+                        { "y", r.Top },
+                        { "width", w },
+                        { "height", h }
+                    };
+                }
+            }
+            finally
+            {
+                foreach (var p in procs) { try { p.Dispose(); } catch { } }
+            }
+        }
+        catch { }
+        return new Dictionary<string, object>
+        {
+            { "found", false },
+            { "minimized", false },
+            { "foreground", false },
+            { "x", 0 },
+            { "y", 0 },
+            { "width", 0 },
+            { "height", 0 }
+        };
     }
 
     public static void ClickAt(int x, int y)
@@ -517,7 +580,8 @@ internal sealed class JianYingEngine
                 { "coordinatesReady", ModeCoordsReady() && !_resolutionMismatch },
                 { "draftDir", _draftDir ?? "" },
                 { "subtitleOutput", _subtitleOutput ?? "" },
-                { "fileCount", _selectedFiles.Count }
+                { "fileCount", _selectedFiles.Count },
+                { "jianyingWindow", NativeWin32.GetJianyingWindowInfo() }
             };
         }
     }

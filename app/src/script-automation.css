@@ -1301,3 +1301,248 @@
   border-top: 1px solid var(--ui-border, #252b2c);
 }
 
+/* =========================================================================
+   Spatial Frosted Glassmorphism & Rich Spring Motion System
+   ========================================================================= */
+@keyframes bosAuroraDrift {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(28px, -22px, 0) scale(1.08);
+  }
+}
+
+@keyframes bosPanelFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes bosMascotBob {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes bosMascotBlink {
+  0%, 92%, 96%, 100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.14);
+  }
+}
+
+@keyframes bosGlassPop {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Ambient Aurora Glow Layers behind Frosted Glass */
+.app-shell {
+  position: relative;
+  isolation: isolate;
+}
+.app-shell::before,
+.app-shell::after {
+  content: "";
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(85px);
+  pointer-events: none;
+  z-index: -1;
+  opacity: 0.26;
+  animation: bosAuroraDrift 14s ease-in-out infinite;
+}
+.app-shell::before {
+  width: 460px;
+  height: 460px;
+  top: -110px;
+  left: 16%;
+  background: radial-gradient(circle, var(--ui-accent, #c5f54f) 0%, transparent 70%);
+}
+.app-shell::after {
+  width: 420px;
+  height: 420px;
+  bottom: -90px;
+  right: 12%;
+  background: radial-gradient(circle, #38bdf8 0%, var(--ui-accent, #c5f54f) 45%, transparent 72%);
+  animation-delay: -7s;
+}
+
+/* Frosted Glass Surfaces Across Whole App */
+.sidebar,
+.bos-quickrail,
+.bos-titlebar {
+  background: color-mix(in srgb, var(--ui-surface, #111415) 72%, transparent) !important;
+  backdrop-filter: blur(24px) saturate(185%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(185%) !important;
+}
+
+.bos-card,
+.bos-jy-panel,
+.bos-wm-card,
+.bos-wm-queue-panel,
+.provider-card,
+.model-card,
+.music-studio-card {
+  background: color-mix(in srgb, var(--ui-surface, #111415) 75%, transparent) !important;
+  backdrop-filter: blur(22px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(22px) saturate(180%) !important;
+  border: 1px solid color-mix(in srgb, var(--ui-border, #252b2c) 80%, rgba(255, 255, 255, 0.14)) !important;
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  animation: bosPanelFadeUp 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms ease,
+    box-shadow 240ms ease !important;
+}
+
+.bos-card:hover,
+.bos-jy-panel:hover,
+.bos-wm-card:hover {
+  border-color: color-mix(in srgb, var(--ui-accent, #c5f54f) 38%, var(--ui-border, #252b2c)) !important;
+  box-shadow:
+    0 18px 40px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+
+/* Titlebar Companion Button */
+.bos-companion-pill {
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--ui-accent, #c5f54f) 42%, var(--ui-border, #252b2c));
+  background: color-mix(in srgb, var(--ui-soft, #1b221a) 75%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--ui-accent, #c5f54f);
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms ease;
+}
+.bos-companion-pill:hover {
+  transform: translateY(-1px) scale(1.03);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--ui-accent, #c5f54f) 28%, transparent);
+}
+
+/* Cute Mascot Orb & Frosted Glass Expandable Drawer Enhancements */
+.bos-tray-orb {
+  animation: bosMascotBob 3.2s ease-in-out infinite;
+  background: radial-gradient(
+    circle at 30% 22%,
+    color-mix(in srgb, var(--ui-accent, #c5f54f) 28%, var(--ui-raised, #181c1e)),
+    color-mix(in srgb, var(--ui-bg, #090b0c) 88%, transparent)
+  ) !important;
+  backdrop-filter: blur(22px) saturate(190%) !important;
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.55),
+    inset 0 1px 1px rgba(255, 255, 255, 0.28) !important;
+}
+.bos-mascot-ear {
+  position: absolute;
+  top: -5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 5px 12px 4px 10px;
+  background: linear-gradient(135deg, var(--ui-accent, #c5f54f), #38bdf8);
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  z-index: -1;
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.bos-mascot-ear.ear-l {
+  left: 9px;
+  transform: rotate(-18deg);
+}
+.bos-mascot-ear.ear-r {
+  right: 9px;
+  transform: rotate(26deg) scaleX(-1);
+}
+.bos-tray-orb:hover .bos-mascot-ear.ear-l {
+  transform: rotate(-30deg) translateY(-2px);
+}
+.bos-tray-orb:hover .bos-mascot-ear.ear-r {
+  transform: rotate(38deg) scaleX(-1) translateY(-2px);
+}
+.bos-mascot-face {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.bos-mascot-eye {
+  width: 5px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ui-accent, #c5f54f);
+  box-shadow: 0 0 6px var(--ui-accent, #c5f54f);
+  animation: bosMascotBlink 4s infinite;
+}
+.bos-mascot-blush {
+  position: absolute;
+  bottom: 3px;
+  width: 5px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(244, 114, 182, 0.6);
+}
+.bos-mascot-blush.blush-l { left: 2px; }
+.bos-mascot-blush.blush-r { right: 2px; }
+.bos-mascot-mouth {
+  position: absolute;
+  bottom: 2px;
+  width: 7px;
+  height: 4px;
+  border-bottom: 1.5px solid var(--ui-text, #f3f5f2);
+  border-radius: 0 0 999px 999px;
+}
+
+.bos-tray-sat {
+  background: color-mix(in srgb, var(--ui-surface, #111415) 76%, transparent) !important;
+  backdrop-filter: blur(18px) saturate(185%) !important;
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18) !important;
+}
+.bos-tray-drawer {
+  background: color-mix(in srgb, var(--ui-surface, #111415) 78%, transparent) !important;
+  backdrop-filter: blur(28px) saturate(195%) !important;
+  -webkit-backdrop-filter: blur(28px) saturate(195%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.16) !important;
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+  animation: bosGlassPop 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.bos-tray-module {
+  background: color-mix(in srgb, var(--ui-raised, #181c1e) 68%, transparent) !important;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  transition: transform 180ms ease, border-color 180ms ease;
+}
+.bos-tray-module:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--ui-accent, #c5f54f) 45%, transparent) !important;
+}
+
+

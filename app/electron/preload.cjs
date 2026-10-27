@@ -54,4 +54,6 @@ contextBridge.exposeInMainWorld("blackObsidian", {
   updaterAction: action => ipcRenderer.invoke('bos:updater-action', action),
   onUpdaterState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:updater-state', listener); return () => ipcRenderer.removeListener('bos:updater-state', listener); },
   setTitleBarTheme: scheme => ipcRenderer.invoke('bos:titlebar-theme', scheme),
+  companionAction: (action, value) => ipcRenderer.invoke('bos:companion-action', action, value),
+  onCompanionState: callback => { const listener = (_event, value) => callback(value); ipcRenderer.on('bos:companion-state', listener); return () => ipcRenderer.removeListener('bos:companion-state', listener); },
 });

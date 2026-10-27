@@ -17,6 +17,7 @@ import { createWebAIHost } from './web-ai-host.mjs';
 import { webAIScriptPrompt } from '../shared/web-ai-prompts.mjs';
 import { createWebAnalysis } from './web-ai-analysis.mjs';
 import { createAutoUpdater } from './auto-updater.mjs';
+import { createCompanionDock } from './companion-dock.mjs';
 
 const APP_HOST = "127.0.0.1";
 app.setName('XM剪辑台');
@@ -31,6 +32,7 @@ const musicLibrary = createMusicLibrary({ settingsFile: path.join(app.getPath('u
 const periodKeeper = createPeriodKeeper(process.resourcesPath, { clipboard });
 const musicDrag = createMusicDrag({ registryFile: path.join(app.getPath('userData'), 'saved-music-files.json'), resolveLocalTrack: musicLibrary.resolve });
 let systemTray = null;
+let companionDock = null;
 const watermarkHost = createWatermarkHost({
   appDirectory: app.getAppPath(),
   dataDirectory: path.join(app.getPath('userData'), 'watermark'),
@@ -38,6 +40,7 @@ const watermarkHost = createWatermarkHost({
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('bos:watermark-state', state);
     }
+    void companionDock?.broadcastState?.();
     if (systemTray && !systemTray.isDestroyed()) {
       if (state.running) {
         systemTray.setToolTip(`XM剪辑台 · 批量水印处理中 ${state.completedCount}/${state.totalCount} (${state.overallProgress}%)`);
@@ -195,6 +198,9 @@ function registerLocalFileHandlers() {
     if (!['scan', 'addFolder', 'removeFolder', 'openFolder', 'select', 'browse', 'launch'].includes(action)) throw new Error('无效的快捷栏操作。');
     return quickLaunch[action](value);
   });
+  ipcMain.handle('bos:companion-action', (_event, action, value) => {
+    return companionDock?.handleAction?.(action, value);
+  });
   ipcMain.handle('bos:jianying-files', async event => {
     fromMainWindow(event);
     const result = await dialog.showOpenDialog(mainWindow, { title: '选择要改名的文件', properties: ['openFile', 'multiSelections'], filters: [{ name: '视频、音频和字幕', extensions: ['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'srt', 'ass'] }] });
@@ -297,6 +303,9 @@ if (!hasSingleInstance) {
       return { action: "deny" };
     });
     mainWindow.on('close', () => webAI.layout({ visible: false }));
+    mainWindow.on('minimize', () => {
+      void companionDock?.show?.(false);
+    });
     mainWindow.webContents.on('render-process-gone', () => webAI.layout({ visible: false }));
     mainWindow.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) webAI.layout({ visible: false }); });
     mainWindow.on("closed", () => { mainWindow = null; });
@@ -314,6 +323,39 @@ if (!hasSingleInstance) {
     }
   };
 
+  const setupCompanionDock = () => {
+    companionDock = createCompanionDock({
+      preloadPath,
+      iconPath: path.join(app.getAppPath(), "build", "app-icon.ico"),
+      getJianyingState: () => jianying.run('status', {}),
+      getWatermarkState: () => watermarkHost.getState(),
+      getPeriodStatus: () => periodKeeper.status(),
+      onAction: async (action, value) => {
+        if (action === 'navigate') {
+          focusAndNavigate(String(value || ''));
+        } else if (action === 'jy-scan') {
+          await jianying.run('scan', {});
+        } else if (action === 'wm-add') {
+          const result = await dialog.showOpenDialog(mainWindow, {
+            title: '选择要添加水印的视频文件（支持多选）',
+            properties: ['openFile', 'multiSelections'],
+            filters: [{ name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'] }],
+          });
+          if (!result.canceled && result.filePaths.length) {
+            await watermarkHost.addVideos(result.filePaths);
+          }
+        } else if (action === 'wm-start') {
+          await watermarkHost.startBatch();
+        } else if (action === 'toggle-period') {
+          const cur = await periodKeeper.status();
+          await periodKeeper.setEnabled(!cur?.enabled, 'period');
+        } else if (action === 'launch-jy') {
+          await quickLaunch.launch().catch(() => {});
+        }
+      },
+    });
+  };
+
   const setupSystemTray = () => {
     try {
       const iconPath = path.join(app.getAppPath(), "build", "app-icon.ico");
@@ -322,6 +364,7 @@ if (!hasSingleInstance) {
       systemTray.setToolTip("XM剪辑台 · 视频批量水印与剪映智能工作台");
       const menu = Menu.buildFromTemplate([
         { label: "打开 XM剪辑台", click: () => focusAndNavigate("") },
+        { label: "召唤/隐藏 剪映灵动伴侣悬浮窗", click: () => void companionDock?.toggle?.() },
         { type: "separator" },
         { label: "批量水印中心（原生硬件加速）", click: () => focusAndNavigate("watermark") },
         { label: "剪映智能工作台", click: () => focusAndNavigate("jianying") },
@@ -349,6 +392,7 @@ if (!hasSingleInstance) {
       musicLibrary,
     });
     logStartup(`local service listening on ${APP_HOST}:${APP_PORT}`);
+    setupCompanionDock();
     await createMainWindow();
     setupSystemTray();
     logStartup("main window loaded");
@@ -372,6 +416,7 @@ if (!hasSingleInstance) {
       event.preventDefault();
       toolsStopped = true;
       try { systemTray?.destroy(); } catch { /* ignore */ }
+      try { companionDock?.dispose(); } catch { /* ignore */ }
       void Promise.allSettled([webAnalysis.dispose(), periodKeeper.dispose(), watermarkHost.dispose(), jianying.dispose(), webAI.dispose()]).finally(() => app.quit());
       return;
     }

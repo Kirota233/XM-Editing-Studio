@@ -54,6 +54,31 @@ export function createAutoUpdater({
     return { ...state };
   };
 
+  async function fetchAssetWithFallback(url, options = {}) {
+    try {
+      const primary = await fetcher(url, options);
+      if (primary && primary.ok) return primary;
+      if (fetcher !== globalThis.fetch) return primary;
+    } catch (primaryErr) {
+      if (fetcher !== globalThis.fetch) throw primaryErr;
+    }
+    const mirrors = [
+      `https://ghfast.top/${url}`,
+      `https://gh-proxy.com/${url}`,
+    ];
+    let lastError = null;
+    for (const mirrorUrl of mirrors) {
+      try {
+        const res = await fetcher(mirrorUrl, options);
+        if (res && res.ok) return res;
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (lastError) throw lastError;
+    return await fetcher(url, options);
+  }
+
   async function check() {
     if (state.status === 'checking' || state.status === 'downloading') return { ...state };
     update({ status: 'checking', error: '' });
@@ -79,7 +104,7 @@ export function createAutoUpdater({
       let expectedSha256 = '';
       if (shaAsset?.browser_download_url && setupAsset?.name) {
         try {
-          const shaResp = await fetcher(shaAsset.browser_download_url);
+          const shaResp = await fetchAssetWithFallback(shaAsset.browser_download_url);
           if (shaResp.ok) {
             const text = await shaResp.text();
             for (const line of text.split(/\r?\n/)) {
@@ -129,7 +154,7 @@ export function createAutoUpdater({
       update({ status: 'downloading', progress: 0, error: '' });
 
       try {
-        const response = await fetcher(state.downloadUrl, {
+        const response = await fetchAssetWithFallback(state.downloadUrl, {
           headers: { 'User-Agent': `XM-Editing-Studio/${currentVersion}` },
         });
         if (!response.ok || !response.body) {

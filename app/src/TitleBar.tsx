@@ -78,6 +78,14 @@ export function TitleBar() {
       <div className="bos-titlebar-actions">
         <button
           type="button"
+          className="bos-companion-pill"
+          onClick={() => api?.companionAction?.('toggle').catch(() => {})}
+          title="呼出或隐藏桌面可爱的剪映伴侣毛玻璃悬浮球（支持自动吸附剪映窗口）"
+        >
+          🐾 剪映伴侣悬浮窗
+        </button>
+        <button
+          type="button"
           className={badgeClass}
           disabled={state.status === 'checking' || state.status === 'downloading'}
           onClick={handleAction}
