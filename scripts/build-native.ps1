@@ -6,6 +6,15 @@ try {
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
     if (-not (Test-Path -LiteralPath $compiler)) { throw '.NET Framework 4.x C# compiler is required on Windows x64.' }
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    function Get-Sha256Hex([string]$filePath) {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $bytes = [System.IO.File]::ReadAllBytes($filePath)
+            return ([System.BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+        } finally {
+            $sha.Dispose()
+        }
+    }
 
     # 1. Compile PeriodKeeper.exe (C# native clipboard helper)
     $helperDirectory = Join-Path $repoRoot '.generated/native/helpers'
@@ -14,7 +23,7 @@ try {
     $source = Join-Path $repoRoot 'app/native/PeriodKeeper.cs'
     & $compiler /nologo /utf8output /codepage:65001 /target:exe /platform:x64 /optimize+ /r:System.Web.Extensions.dll ('/out:' + $helper) $source
     if ($LASTEXITCODE -ne 0) { throw 'Punctuation helper compilation failed.' }
-    $hash = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash.ToLowerInvariant()
+    $hash = Get-Sha256Hex $helper
     [IO.File]::WriteAllText((Join-Path $repoRoot 'app/electron/period-helper-integrity.mjs'), "export const HELPER_SHA256 = '$hash';`n", $utf8NoBom)
 
     # 2. Compile JianYingEngine.exe (Refactored from 70MB Python/PyInstaller to 47KB native C#)
@@ -33,7 +42,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $engineExe)) {
         throw 'JianYingEngine C# compilation failed.'
     }
-    $engineHash = (Get-FileHash -LiteralPath $engineExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $engineHash = Get-Sha256Hex $engineExe
     $engineManifest = "{`n  `"sha256`": `"$engineHash`"`n}`n"
     [IO.File]::WriteAllText((Join-Path $engineOutDir 'engine.json'), $engineManifest, $utf8NoBom)
 
@@ -52,7 +61,7 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $wmExe)) {
         throw 'WatermarkEngine C# compilation failed.'
     }
-    $wmHash = (Get-FileHash -LiteralPath $wmExe -Algorithm SHA256).Hash.ToLowerInvariant()
+    $wmHash = Get-Sha256Hex $wmExe
     $wmManifest = "{`n  `"sha256`": `"$wmHash`"`n}`n"
     [IO.File]::WriteAllText((Join-Path $wmOutDir 'engine.json'), $wmManifest, $utf8NoBom)
     if (Test-Path -LiteralPath (Join-Path $repoRoot 'app/public/watermark.png')) {
