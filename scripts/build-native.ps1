@@ -62,7 +62,8 @@ try {
     # 4. Compile XMStudioHost.exe (Native C# + Windows WebView2 Desktop Host - replaces 180MB Electron Chromium bundle)
     $hostOutDir = Join-Path $repoRoot 'app/build/host'
     New-Item -ItemType Directory -Path $hostOutDir -Force | Out-Null
-    $hostExe = Join-Path $hostOutDir '小马剪辑台.exe'
+    $hostExeName = [regex]::Unescape("\u5c0f\u9a6c\u526a\u8f91\u53f0.exe")
+    $hostExe = Join-Path $hostOutDir $hostExeName
     $hostSource = Join-Path $repoRoot 'app/native/XMStudioHost.cs'
     $wvCore = Join-Path $repoRoot 'app/lib/webview2/Microsoft.Web.WebView2.Core.dll'
     $wvWinForms = Join-Path $repoRoot 'app/lib/webview2/Microsoft.Web.WebView2.WinForms.dll'

@@ -101,7 +101,7 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.6\.0/);
+  assert.match(textOf(titleBar), /v1\.6\.1/);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {
