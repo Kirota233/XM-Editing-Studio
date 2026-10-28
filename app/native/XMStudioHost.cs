@@ -685,9 +685,571 @@ namespace XMStudioHost
         }
     }
 
+    internal sealed class NativePeriodKeeperEngine : IDisposable
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MemoryRegion
+        {
+            public IntPtr BaseAddress, AllocationBase;
+            public uint AllocationProtect;
+            public ushort PartitionId;
+            public UIntPtr RegionSize;
+            public uint State, Protect, Type;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ModuleInfo
+        {
+            public IntPtr BaseOfDll;
+            public uint SizeOfImage;
+            public IntPtr EntryPoint;
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] buffer, UIntPtr size, out UIntPtr read);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteProcessMemory(IntPtr process, IntPtr address, byte[] buffer, UIntPtr size, out UIntPtr written);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool VirtualProtectEx(IntPtr process, IntPtr address, UIntPtr size, uint protection, out uint old);
+
+        [DllImport("kernel32.dll")]
+        private static extern UIntPtr VirtualQueryEx(IntPtr process, IntPtr address, out MemoryRegion region, UIntPtr length);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
+
+        [DllImport("psapi.dll", SetLastError = true)]
+        private static extern bool EnumProcessModules(IntPtr hProcess, [Out] IntPtr[] lphModule, uint cb, out uint lpcbNeeded);
+
+        [DllImport("psapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetModuleBaseNameW(IntPtr hProcess, IntPtr hModule, StringBuilder lpBaseName, uint nSize);
+
+        [DllImport("psapi.dll", SetLastError = true)]
+        private static extern bool GetModuleInformation(IntPtr hProcess, IntPtr hModule, out ModuleInfo lpmodinfo, uint cb);
+
+        [DllImport("user32.dll")]
+        private static extern uint GetClipboardSequenceNumber();
+
+        [DllImport("user32.dll")]
+        private static extern bool OpenClipboard(IntPtr hWndNewOwner);
+
+        [DllImport("user32.dll")]
+        private static extern bool CloseClipboard();
+
+        [DllImport("user32.dll")]
+        private static extern bool EmptyClipboard();
+
+        [DllImport("user32.dll")]
+        private static extern bool IsClipboardFormatAvailable(uint format);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetClipboardData(uint uFormat);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetClipboardData(uint uFormat, IntPtr hMem);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GlobalAlloc(uint uFlags, UIntPtr dwBytes);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GlobalLock(IntPtr hMem);
+
+        [DllImport("kernel32.dll")]
+        private static extern bool GlobalUnlock(IntPtr hMem);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GlobalFree(IntPtr hMem);
+
+        private const uint CF_UNICODETEXT = 13;
+        private const uint GMEM_MOVEABLE = 0x0002;
+
+        // 1:1 from Kirota233/JianYing-Period-Keeper (VECreator.dll UTF-16 & UTF-8 punctuation tables)
+        private static readonly byte[] OrigU16 = Encoding.Unicode.GetBytes("。！？!?；;，,、.\n\r");
+        private static readonly byte[] PatchU16 = Encoding.Unicode.GetBytes("！！？!?；;！!、!\n\r");
+        private static readonly byte[] OrigU8 = Encoding.UTF8.GetBytes("[。？！；“ .!?～]\0");
+        private static readonly byte[] PatchU8 = Encoding.UTF8.GetBytes("[？！；“ !?～]\0\0\0\0\0");
+
+        private readonly object _gate = new object();
+        private volatile bool _disposed;
+        private volatile bool _enabled;
+        private string _mode = "compatible";
+        private string _lastError = "";
+        private uint _lastClipboardSeq;
+        private int _patchedCount;
+        private string _lastEngineState = "offline";
+        private int _lastProcesses;
+        private int _lastEditors;
+        private readonly Thread _sentinelThread;
+        private readonly Thread _monitorThread;
+
+        public bool Enabled { get { return _enabled; } }
+
+        public NativePeriodKeeperEngine()
+        {
+            EnsureVeCreatorIntegrity();
+            _sentinelThread = new Thread(ClipboardSentinelLoop) { IsBackground = true, Name = "PeriodClipboardSentinel" };
+            _sentinelThread.Start();
+            _monitorThread = new Thread(MonitorJianyingLoop) { IsBackground = true, Name = "PeriodJianyingMonitor" };
+            _monitorThread.Start();
+        }
+
+        private static void EnsureVeCreatorIntegrity()
+        {
+            try
+            {
+                string localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                string[] dirs = new string[]
+                {
+                    @"D:\JianyingPro",
+                    @"C:\Program Files\JianyingPro",
+                    Path.Combine(localApp, "JianyingPro", "Apps"),
+                    Path.Combine(localApp, "JianyingPro")
+                };
+                foreach (string d in dirs)
+                {
+                    if (!Directory.Exists(d)) continue;
+                    foreach (string bak in Directory.EnumerateFiles(d, "VECreator.dll.bak", SearchOption.AllDirectories))
+                    {
+                        string dll = bak.Substring(0, bak.Length - 4);
+                        if (File.Exists(dll) && new FileInfo(dll).Length != new FileInfo(bak).Length)
+                        {
+                            try { File.Copy(bak, dll, true); } catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public static bool NeedsProtection(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.IndexOf('.') >= 0 || text.IndexOf(',') >= 0 || text.IndexOf('。') >= 0 || text.IndexOf('，') >= 0;
+        }
+
+        public static bool NeedsRestoration(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text.IndexOf('․') >= 0 || text.IndexOf('‚') >= 0 || text.IndexOf('﹒') >= 0 || text.IndexOf('﹐') >= 0 || text.IndexOf('\u2060') >= 0;
+        }
+
+        public static string ProtectText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            text = text.Replace("\u2060", "");
+            // Preserve 2+ consecutive dots (ellipses ...) untouched
+            text = Regex.Replace(text, @"[ \t\u3000]*(\.{2,}|[.,。，])", m =>
+            {
+                string p = m.Groups[1].Value;
+                if (p.Length >= 2 && p[0] == '.') return m.Value;
+                if (p == ".") return "․";
+                if (p == ",") return "‚";
+                if (p == "。") return "﹒";
+                if (p == "，") return "﹐";
+                return m.Value;
+            });
+            return text;
+        }
+
+        public static string RestoreText(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return "";
+            return text.Replace("\u2060", "")
+                .Replace('․', '.')
+                .Replace('‚', ',')
+                .Replace('﹒', '。')
+                .Replace('﹐', '，');
+        }
+
+        public static string WinGetClipboardText()
+        {
+            for (int i = 0; i < 5; i++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    try
+                    {
+                        if (!IsClipboardFormatAvailable(CF_UNICODETEXT)) return null;
+                        IntPtr hData = GetClipboardData(CF_UNICODETEXT);
+                        if (hData == IntPtr.Zero) return null;
+                        IntPtr pData = GlobalLock(hData);
+                        if (pData == IntPtr.Zero) return null;
+                        try
+                        {
+                            return Marshal.PtrToStringUni(pData);
+                        }
+                        finally
+                        {
+                            GlobalUnlock(hData);
+                        }
+                    }
+                    finally
+                    {
+                        CloseClipboard();
+                    }
+                }
+                Thread.Sleep(20);
+            }
+            return null;
+        }
+
+        public static bool WinSetClipboardText(string text)
+        {
+            if (text == null) return false;
+            byte[] bytes = Encoding.Unicode.GetBytes(text + "\0");
+            for (int i = 0; i < 5; i++)
+            {
+                if (OpenClipboard(IntPtr.Zero))
+                {
+                    try
+                    {
+                        EmptyClipboard();
+                        IntPtr hMem = GlobalAlloc(GMEM_MOVEABLE, (UIntPtr)bytes.Length);
+                        if (hMem == IntPtr.Zero) return false;
+                        IntPtr pMem = GlobalLock(hMem);
+                        if (pMem == IntPtr.Zero)
+                        {
+                            GlobalFree(hMem);
+                            return false;
+                        }
+                        Marshal.Copy(bytes, 0, pMem, bytes.Length);
+                        GlobalUnlock(hMem);
+                        if (SetClipboardData(CF_UNICODETEXT, hMem) != IntPtr.Zero) return true;
+                        GlobalFree(hMem);
+                        return false;
+                    }
+                    finally
+                    {
+                        CloseClipboard();
+                    }
+                }
+                Thread.Sleep(20);
+            }
+            return false;
+        }
+
+        private void ClipboardSentinelLoop()
+        {
+            while (!_disposed)
+            {
+                try
+                {
+                    if (_enabled && _mode == "compatible")
+                    {
+                        uint seq = GetClipboardSequenceNumber();
+                        if (seq != _lastClipboardSeq)
+                        {
+                            _lastClipboardSeq = seq;
+                            string text = WinGetClipboardText();
+                            if (!string.IsNullOrEmpty(text) && text.Length <= 120000 && NeedsProtection(text))
+                            {
+                                string protectedText = ProtectText(text);
+                                if (protectedText != text && WinSetClipboardText(protectedText))
+                                {
+                                    _lastClipboardSeq = GetClipboardSequenceNumber();
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+                Thread.Sleep(100);
+            }
+        }
+
+        private void MonitorJianyingLoop()
+        {
+            while (!_disposed)
+            {
+                try
+                {
+                    RefreshJianyingMemory(false);
+                }
+                catch { }
+                Thread.Sleep(1200);
+            }
+        }
+
+        private static int FindPattern(byte[] data, int dataLen, byte[] pattern)
+        {
+            int limit = dataLen - pattern.Length;
+            for (int i = 0; i <= limit; i++)
+            {
+                if (data[i] != pattern[0]) continue;
+                int j = 1;
+                while (j < pattern.Length && data[i + j] == pattern[j]) j++;
+                if (j == pattern.Length) return i;
+            }
+            return -1;
+        }
+
+        private static bool TryFindVeCreator(IntPtr hProcess, out long baseAddr, out int sizeOfImage)
+        {
+            baseAddr = 0;
+            sizeOfImage = 0;
+            IntPtr[] mods = new IntPtr[1024];
+            uint needed;
+            if (!EnumProcessModules(hProcess, mods, (uint)(mods.Length * IntPtr.Size), out needed)) return false;
+            int count = (int)Math.Min((uint)mods.Length, needed / (uint)IntPtr.Size);
+            var sb = new StringBuilder(260);
+            for (int i = 0; i < count; i++)
+            {
+                sb.Length = 0;
+                if (GetModuleBaseNameW(hProcess, mods[i], sb, (uint)sb.Capacity) == 0) continue;
+                if (!string.Equals(sb.ToString(), "VECreator.dll", StringComparison.OrdinalIgnoreCase)) continue;
+                ModuleInfo info;
+                if (GetModuleInformation(hProcess, mods[i], out info, (uint)Marshal.SizeOf(typeof(ModuleInfo))))
+                {
+                    baseAddr = info.BaseOfDll.ToInt64();
+                    sizeOfImage = (int)info.SizeOfImage;
+                    return baseAddr != 0 && sizeOfImage > 0;
+                }
+            }
+            return false;
+        }
+
+        private static int ScanAndPatchProcess(int pid, bool applyPatch, bool onlyCheck, out bool hasEditor, out bool accessDenied)
+        {
+            hasEditor = false;
+            accessDenied = false;
+            IntPtr h = OpenProcess(0x1F0FFFu, false, pid);
+            if (h == IntPtr.Zero) h = OpenProcess(onlyCheck ? 0x0410u : 0x0438u, false, pid);
+            if (h == IntPtr.Zero)
+            {
+                accessDenied = true;
+                return 0;
+            }
+            int activeOrModified = 0;
+            try
+            {
+                long baseAddr;
+                int sizeOfImage;
+                if (!TryFindVeCreator(h, out baseAddr, out sizeOfImage)) return 0;
+                hasEditor = true;
+
+                long curr = baseAddr;
+                long end = baseAddr + sizeOfImage;
+                int mbiSize = Marshal.SizeOf(typeof(MemoryRegion));
+
+                byte[] u16Src = applyPatch ? OrigU16 : PatchU16;
+                byte[] u16Dst = applyPatch ? PatchU16 : OrigU16;
+                byte[] u8Src = applyPatch ? OrigU8 : PatchU8;
+                byte[] u8Dst = applyPatch ? PatchU8 : OrigU8;
+
+                while (curr < end)
+                {
+                    MemoryRegion mbi;
+                    if (VirtualQueryEx(h, new IntPtr(curr), out mbi, (UIntPtr)mbiSize).ToUInt64() == 0) break;
+                    long regSize = (long)mbi.RegionSize.ToUInt64();
+                    if (regSize <= 0) break;
+                    long next = Math.Min(end, mbi.BaseAddress.ToInt64() + regSize);
+
+                    if (mbi.State == 0x1000 && (mbi.Protect & 0xEE) != 0 && (mbi.Protect & 0x100) == 0)
+                    {
+                        for (long chunk = curr; chunk < next; chunk += 1024 * 1024)
+                        {
+                            int len = (int)Math.Min(1024 * 1024 + 64, next - chunk);
+                            byte[] buf = new byte[len];
+                            UIntPtr readBytes;
+                            if (!ReadProcessMemory(h, new IntPtr(chunk), buf, (UIntPtr)len, out readBytes)) continue;
+                            int actualLen = (int)readBytes.ToUInt64();
+                            if (actualLen <= 0) continue;
+
+                            // Check if already patched
+                            if (applyPatch)
+                            {
+                                if (FindPattern(buf, actualLen, PatchU16) >= 0) activeOrModified++;
+                                if (FindPattern(buf, actualLen, PatchU8) >= 0) activeOrModified++;
+                            }
+
+                            if (!onlyCheck)
+                            {
+                                int p1 = FindPattern(buf, actualLen, u16Src);
+                                if (p1 >= 0 && p1 < 1024 * 1024)
+                                {
+                                    long va = chunk + p1;
+                                    uint oldProt;
+                                    if (VirtualProtectEx(h, new IntPtr(va), (UIntPtr)u16Dst.Length, 0x40, out oldProt))
+                                    {
+                                        UIntPtr written;
+                                        WriteProcessMemory(h, new IntPtr(va), u16Dst, (UIntPtr)u16Dst.Length, out written);
+                                        uint dummy;
+                                        VirtualProtectEx(h, new IntPtr(va), (UIntPtr)u16Dst.Length, oldProt, out dummy);
+                                        FlushInstructionCache(h, new IntPtr(va), (UIntPtr)u16Dst.Length);
+                                        activeOrModified++;
+                                    }
+                                }
+
+                                int p2 = FindPattern(buf, actualLen, u8Src);
+                                if (p2 >= 0 && p2 < 1024 * 1024)
+                                {
+                                    long va2 = chunk + p2;
+                                    uint oldProt2;
+                                    if (VirtualProtectEx(h, new IntPtr(va2), (UIntPtr)u8Dst.Length, 0x40, out oldProt2))
+                                    {
+                                        UIntPtr written2;
+                                        WriteProcessMemory(h, new IntPtr(va2), u8Dst, (UIntPtr)u8Dst.Length, out written2);
+                                        uint dummy2;
+                                        VirtualProtectEx(h, new IntPtr(va2), (UIntPtr)u8Dst.Length, oldProt2, out dummy2);
+                                        FlushInstructionCache(h, new IntPtr(va2), (UIntPtr)u8Dst.Length);
+                                        activeOrModified++;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    curr = next;
+                }
+            }
+            finally
+            {
+                CloseHandle(h);
+            }
+            return activeOrModified;
+        }
+
+        public Dictionary<string, object> RefreshJianyingMemory(bool forceApplyOrRestore)
+        {
+            lock (_gate)
+            {
+                int processes = 0, editors = 0, denied = 0, patched = 0;
+                Process[] procs = Process.GetProcessesByName("JianyingPro");
+                foreach (Process p in procs)
+                {
+                    using (p)
+                    {
+                        processes++;
+                        bool hasEd, accDen;
+                        bool onlyCheck = !forceApplyOrRestore && !_enabled;
+                        int cnt = ScanAndPatchProcess(p.Id, _enabled, onlyCheck, out hasEd, out accDen);
+                        if (hasEd) editors++;
+                        if (accDen) denied++;
+                        patched += cnt;
+                    }
+                }
+                _lastProcesses = processes;
+                _lastEditors = editors;
+                _patchedCount = _enabled ? patched : 0;
+                _lastEngineState = processes == 0
+                    ? "offline"
+                    : editors == 0
+                        ? (denied > 0 ? "denied" : "standby")
+                        : denied > 0
+                            ? "denied"
+                            : _enabled && patched > 0
+                                ? "active"
+                                : "ready";
+                return GetStatus();
+            }
+        }
+
+        public Dictionary<string, object> SetEnabled(bool enabled, string mode)
+        {
+            lock (_gate)
+            {
+                _enabled = enabled;
+                if (!string.IsNullOrEmpty(mode) && (mode == "standard" || mode == "compatible"))
+                {
+                    _mode = mode;
+                }
+                else
+                {
+                    _mode = "compatible";
+                }
+                _lastError = "";
+
+                RefreshJianyingMemory(true);
+
+                try
+                {
+                    string clip = WinGetClipboardText();
+                    if (!string.IsNullOrEmpty(clip) && clip.Length <= 120000)
+                    {
+                        if (_enabled && _mode == "compatible" && NeedsProtection(clip))
+                        {
+                            string prot = ProtectText(clip);
+                            if (prot != clip && WinSetClipboardText(prot))
+                            {
+                                _lastClipboardSeq = GetClipboardSequenceNumber();
+                            }
+                        }
+                        else if ((!_enabled || _mode != "compatible") && NeedsRestoration(clip))
+                        {
+                            string rest = RestoreText(clip);
+                            if (rest != clip && WinSetClipboardText(rest))
+                            {
+                                _lastClipboardSeq = GetClipboardSequenceNumber();
+                            }
+                        }
+                    }
+                }
+                catch { }
+
+                return GetStatus();
+            }
+        }
+
+        public Dictionary<string, object> CopySubtitle(string rawText)
+        {
+            string clean = (rawText ?? "").Replace("\0", "").Replace("\r\n", "\n").Replace("\r", "\n");
+            // Normalize ellipses .. -> ...
+            clean = Regex.Replace(clean, @"[‥…]", "...");
+            clean = Regex.Replace(clean, @"\.(?:[ \t\u3000]*\.)+", "...");
+            string output = (_enabled && _mode == "compatible") ? ProtectText(clean) : clean;
+            string winText = output.Replace("\n", "\r\n");
+            bool ok = WinSetClipboardText(winText);
+            if (ok) _lastClipboardSeq = GetClipboardSequenceNumber();
+            int lines = 0;
+            foreach (string line in clean.Split('\n'))
+            {
+                if (!string.IsNullOrWhiteSpace(line)) lines++;
+            }
+            var st = GetStatus();
+            st["ok"] = ok;
+            st["copyVerified"] = ok;
+            st["copiedCharacters"] = clean.Length;
+            st["copiedLines"] = lines;
+            return st;
+        }
+
+        public Dictionary<string, object> GetStatus()
+        {
+            return new Dictionary<string, object>
+            {
+                { "enabled", _enabled },
+                { "mode", _mode },
+                { "punctuationMode", _mode },
+                { "clipboardProtected", _enabled && _mode == "compatible" },
+                { "clipboardError", "" },
+                { "engine", _lastEngineState },
+                { "processes", _lastProcesses },
+                { "editors", _lastEditors },
+                { "patchedSites", _patchedCount },
+                { "compatibleSites", _patchedCount },
+                { "ready", true },
+                { "error", _lastError }
+            };
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            try { if (_enabled) SetEnabled(false, _mode); } catch { }
+        }
+    }
+
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.2";
+        public const string CurrentVersion = "1.6.3";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -736,9 +1298,8 @@ namespace XMStudioHost
         private bool _wmRunning = false;
         private bool _wmCancel = false;
 
-        // PeriodKeeper state
-        private bool _periodEnabled = false;
-        private string _periodMode = "compatible";
+        // PeriodKeeper native engine (1:1 JianYing-Period-Keeper VECreator.dll patcher + Clipboard Sentinel)
+        private NativePeriodKeeperEngine _periodEngine;
 
         // Music Library state
         private List<string> _musicRoots = new List<string>();
@@ -830,6 +1391,7 @@ namespace XMStudioHost
                 };
             }
 
+            _periodEngine = new NativePeriodKeeperEngine();
             InitMainForm();
             InitSystemTray();
 
@@ -1068,18 +1630,19 @@ namespace XMStudioHost
 
                 case "period-status":
                 case "period-probe":
-                    return new Dictionary<string, object> { { "enabled", _periodEnabled }, { "mode", _periodMode }, { "ready", true } };
+                    return await Task.Run(() => _periodEngine.RefreshJianyingMemory(false));
                 case "period-enabled":
-                    _periodEnabled = payload.ContainsKey("enabled") && Convert.ToBoolean(payload["enabled"]);
-                    if (payload.ContainsKey("mode")) _periodMode = Convert.ToString(payload["mode"]);
-                    BroadcastCompanionState();
-                    return new Dictionary<string, object> { { "enabled", _periodEnabled }, { "mode", _periodMode }, { "ready", true } };
+                    {
+                        bool en = payload.ContainsKey("enabled") && Convert.ToBoolean(payload["enabled"]);
+                        string mode = payload.ContainsKey("mode") ? Convert.ToString(payload["mode"]) : "compatible";
+                        var st = await Task.Run(() => _periodEngine.SetEnabled(en, mode));
+                        BroadcastCompanionState();
+                        return st;
+                    }
                 case "period-copy":
                     {
                         string text = payload.ContainsKey("text") ? Convert.ToString(payload["text"]) : "";
-                        if (_periodEnabled) text = text.Replace(".", "․").Replace(",", "‚");
-                        SetClipboardTextSafe(text);
-                        return new Dictionary<string, object> { { "ok", true }, { "copyVerified", true } };
+                        return await Task.Run(() => _periodEngine.CopySubtitle(text));
                     }
                 case "copy-plain":
                     SetClipboardTextSafe(payload.ContainsKey("text") ? Convert.ToString(payload["text"]) : "");
@@ -1804,7 +2367,11 @@ namespace XMStudioHost
                 return BroadcastCompanionState();
             }
             if (action == "toggle-dock") { _autoDock = !_autoDock; return BroadcastCompanionState(); }
-            if (action == "toggle-period") { _periodEnabled = !_periodEnabled; return BroadcastCompanionState(); }
+            if (action == "toggle-period")
+            {
+                await Task.Run(() => _periodEngine.SetEnabled(!_periodEngine.Enabled, "compatible"));
+                return BroadcastCompanionState();
+            }
             if (action == "wm-add") { ChooseWatermarkVideos(); return BroadcastCompanionState(); }
             if (action == "wm-start") { StartWatermarkBatch(); return BroadcastCompanionState(); }
             if (action == "wm-cancel") { await CancelWatermarkBatchAsync(); return BroadcastCompanionState(); }
@@ -1854,7 +2421,7 @@ namespace XMStudioHost
                     }
                 },
                 { "watermark", GetWatermarkSnapshot() },
-                { "periodEnabled", _periodEnabled }
+                { "periodEnabled", _periodEngine != null && _periodEngine.Enabled }
             };
             SendEventToWebView(_panelWebView, "bos:companion-state", snap);
             return snap;
@@ -2172,6 +2739,7 @@ namespace XMStudioHost
         private void DisposeAll()
         {
             try { if (_companionTimer != null) _companionTimer.Stop(); } catch { }
+            try { if (_periodEngine != null) _periodEngine.Dispose(); } catch { }
             try { if (_tray != null) { _tray.Visible = false; _tray.Dispose(); } } catch { }
             try { if (_orbForm != null) _orbForm.Close(); } catch { }
             try { if (_panelForm != null) _panelForm.Close(); } catch { }

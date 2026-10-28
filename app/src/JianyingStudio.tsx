@@ -82,6 +82,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   const [state, setState] = i.useState(empty as any);
   const [error, setError] = i.useState('');
   const [pending, setPending] = i.useState(false);
+  const [pendingAct, setPendingAct] = i.useState('');
   const [selected, setSelected] = i.useState(0);
   const [modelKey, setModelKey] = i.useState(() => localStorage.getItem('xm.jianying.model') || '');
   const [folder, setFolder] = i.useState('');
@@ -150,17 +151,17 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
     return () => { alive = false; clearTimeout(timer); };
   }, [active, visited]);
 
-  const perform = async (fn: () => Promise<void>) => {
-    setPending(true); setError('');
+  const perform = async (fn: () => Promise<void>, actName = '') => {
+    setPending(true); setPendingAct(actName); setError('');
     try { await fn(); }
     catch (err: any) { setError(err.message || '操作失败。'); }
-    finally { setPending(false); }
+    finally { setPending(false); setPendingAct(''); }
   };
 
   const run = (action: string, args: Record<string, any> = {}) => perform(async () => {
     if (!api?.jianyingAction) throw new Error('此功能需要桌面版的本地引擎。');
     setState(await api.jianyingAction(action, args, connection ? { provider: connection.provider, model: connection.model } : undefined));
-  });
+  }, action);
 
   const choosePath = (key: string) => perform(async () => {
     const value = await api.chooseDirectory();
@@ -259,15 +260,22 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
       <div className="bos-jy-panels" hidden={stage === 'watermark'}>
         <ToolPanel id="export" number="01" title="批量导出" detail="AI 视觉识别剪映草稿队列，全自动顺序导出" hiddenStage={stage !== 'export'}>
           <div className="bos-jy-toolbar">
-            <button type="button" disabled={locked || !state.ready} onClick={() => run('wizard')}>录制坐标 · F8</button>
-            <button type="button" disabled={locked || !connection || !state.ready} onClick={() => run('scan')}>AI 扫描草稿</button>
+            <button type="button" className={pendingAct === 'wizard' || state.recording ? 'is-loading' : ''} disabled={locked || !state.ready} onClick={() => run('wizard')}>
+              {(pendingAct === 'wizard' || state.recording) && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'wizard' || state.recording ? '正在录制坐标…' : '录制坐标 · F8'}
+            </button>
+            <button type="button" className={pendingAct === 'scan' ? 'is-loading' : ''} disabled={locked || !connection || !state.ready} onClick={() => run('scan')}>
+              {pendingAct === 'scan' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'scan' ? '正在扫描草稿…' : 'AI 扫描草稿'}
+            </button>
             <button
               type="button"
-              className="bos-script-primary"
+              className={`bos-script-primary${pendingAct === 'export' || state.exporting ? ' is-loading' : ''}`}
               disabled={locked || !state.queue.length || !state.coordinatesReady}
               onClick={() => run('export', { index: selected })}
             >
-              开始批量导出 ↗
+              {(pendingAct === 'export' || state.exporting) && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'export' || state.exporting ? '正在批量导出…' : '开始批量导出 ↗'}
             </button>
           </div>
           {state.guide && <p className="bos-script-footnote">{state.guide}</p>}
@@ -382,9 +390,18 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
             </div>
           </label>
           <div className="bos-jy-toolbar">
-            <button type="button" className="bos-script-primary" disabled={locked || !state.draftDir} onClick={() => run('extract')}>提取字幕并隐藏轨道</button>
-            <button type="button" disabled={locked || !state.draftDir} onClick={() => run('fonts')}>统一 Noto Sans Bold</button>
-            <button type="button" disabled={locked || !state.draftDir} onClick={() => run('unhide')}>恢复字幕显示</button>
+            <button type="button" className={`bos-script-primary${pendingAct === 'extract' ? ' is-loading' : ''}`} disabled={locked || !state.draftDir} onClick={() => run('extract')}>
+              {pendingAct === 'extract' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'extract' ? '提取字幕中…' : '提取字幕并隐藏轨道'}
+            </button>
+            <button type="button" className={pendingAct === 'fonts' ? 'is-loading' : ''} disabled={locked || !state.draftDir} onClick={() => run('fonts')}>
+              {pendingAct === 'fonts' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              统一 Noto Sans Bold
+            </button>
+            <button type="button" className={pendingAct === 'unhide' ? 'is-loading' : ''} disabled={locked || !state.draftDir} onClick={() => run('unhide')}>
+              {pendingAct === 'unhide' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              恢复字幕显示
+            </button>
           </div>
           <small>操作前请先退出剪映，写入前自动创建安全备份。</small>
         </ToolPanel>
@@ -407,11 +424,13 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
             <input maxLength={500} value={template} disabled={locked} onChange={(event: any) => setTemplate(event.target.value)} placeholder="例如：短剧名称_第1集" />
           </label>
           <div className="bos-jy-toolbar">
-            <button type="button" disabled={locked || !state.ready || (aiRename && !connection)} onClick={() => run('preview', { folder, template, ai: aiRename })}>
-              {aiRename ? 'AI 生成预览' : '生成改名预览'}
+            <button type="button" className={pendingAct === 'preview' ? 'is-loading' : ''} disabled={locked || !state.ready || (aiRename && !connection)} onClick={() => run('preview', { folder, template, ai: aiRename })}>
+              {pendingAct === 'preview' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'preview' ? '生成预览中…' : (aiRename ? 'AI 生成预览' : '生成改名预览')}
             </button>
-            <button type="button" className="bos-script-primary" disabled={locked || !state.plan.length} onClick={() => run('rename')}>
-              执行改名 ({state.plan.length})
+            <button type="button" className={`bos-script-primary${pendingAct === 'rename' ? ' is-loading' : ''}`} disabled={locked || !state.plan.length} onClick={() => run('rename')}>
+              {pendingAct === 'rename' && <span className="bos-btn-spinner" aria-hidden="true" />}
+              {pendingAct === 'rename' ? '执行改名中…' : `执行改名 (${state.plan.length})`}
             </button>
           </div>
           <div className="bos-jy-table">

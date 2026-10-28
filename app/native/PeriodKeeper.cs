@@ -17,6 +17,11 @@ internal static class PeriodKeeper {
         public UIntPtr RegionSize;
         public uint State, Protect, Type;
     }
+    [StructLayout(LayoutKind.Sequential)] struct ModuleInfo {
+        public IntPtr BaseOfDll;
+        public uint SizeOfImage;
+        public IntPtr EntryPoint;
+    }
     [DllImport("kernel32", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
     [DllImport("kernel32")] static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32", SetLastError=true)] static extern bool ReadProcessMemory(IntPtr process, IntPtr address, byte[] buffer, UIntPtr size, out UIntPtr read);
@@ -24,6 +29,9 @@ internal static class PeriodKeeper {
     [DllImport("kernel32", SetLastError=true)] static extern bool VirtualProtectEx(IntPtr process, IntPtr address, UIntPtr size, uint protection, out uint old);
     [DllImport("kernel32")] static extern UIntPtr VirtualQueryEx(IntPtr process, IntPtr address, out MemoryRegion region, UIntPtr length);
     [DllImport("kernel32")] static extern bool FlushInstructionCache(IntPtr process, IntPtr address, UIntPtr size);
+    [DllImport("psapi.dll", SetLastError=true)] static extern bool EnumProcessModules(IntPtr hProcess, [Out] IntPtr[] lphModule, uint cb, out uint lpcbNeeded);
+    [DllImport("psapi.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern uint GetModuleBaseNameW(IntPtr hProcess, IntPtr hModule, StringBuilder lpBaseName, uint nSize);
+    [DllImport("psapi.dll", SetLastError=true)] static extern bool GetModuleInformation(IntPtr hProcess, IntPtr hModule, out ModuleInfo lpmodinfo, uint cb);
 
     static readonly byte[][] Original = {
         Encoding.Unicode.GetBytes("。！？!?；;，,、.\n\r"),
@@ -128,6 +136,26 @@ internal static class PeriodKeeper {
             }
         }
     }
+    static bool TryFindVeCreator(IntPtr handle, out long baseAddr, out int imageSize) {
+        baseAddr = 0; imageSize = 0;
+        IntPtr[] mods = new IntPtr[1024];
+        uint needed;
+        if (!EnumProcessModules(handle, mods, (uint)(mods.Length * IntPtr.Size), out needed)) return false;
+        int count = (int)Math.Min((uint)mods.Length, needed / (uint)IntPtr.Size);
+        var sb = new StringBuilder(260);
+        for (int i = 0; i < count; i++) {
+            sb.Length = 0;
+            if (GetModuleBaseNameW(handle, mods[i], sb, (uint)sb.Capacity) == 0) continue;
+            if (!sb.ToString().Equals("VECreator.dll", StringComparison.OrdinalIgnoreCase)) continue;
+            ModuleInfo info;
+            if (GetModuleInformation(handle, mods[i], out info, (uint)Marshal.SizeOf(typeof(ModuleInfo)))) {
+                baseAddr = info.BaseOfDll.ToInt64();
+                imageSize = (int)info.SizeOfImage;
+                return baseAddr != 0 && imageSize > 0;
+            }
+        }
+        return false;
+    }
     static Dictionary<string, object> Refresh(bool probe) {
         int processes=0, editors=0, denied=0, matches=0;
         var versions = new List<string>();
@@ -135,25 +163,22 @@ internal static class PeriodKeeper {
             using (process) {
                 processes++;
                 try {
-                    long started = process.StartTime.ToUniversalTime().Ticks;
-                    foreach (ProcessModule module in process.Modules) {
-                        if (!module.ModuleName.Equals("VECreator.dll", StringComparison.OrdinalIgnoreCase)) continue;
+                    long started = 0;
+                    try { started = process.StartTime.ToUniversalTime().Ticks; } catch { }
+                    IntPtr handle = OpenProcess(0x1F0FFFu, false, process.Id);
+                    if (handle == IntPtr.Zero) handle = OpenProcess(Enabled ? 0x438u : 0x410u, false, process.Id);
+                    if (handle == IntPtr.Zero) { denied++; continue; }
+                    try {
+                        long modBase; int modSize;
+                        if (!TryFindVeCreator(handle, out modBase, out modSize)) continue;
                         editors++;
-                        string version = module.FileVersionInfo.FileVersion;
-                        if (!String.IsNullOrEmpty(version) && !versions.Contains(version)) versions.Add(version);
-                        // A loaded module with owned, still-active patches does not need another full scan.
                         var owned = Patches.Where(p=>p.Pid==process.Id && p.Started==started).ToArray();
-                        IntPtr handle = OpenProcess(Enabled ? 0x438u : 0x410u, false, process.Id);
-                        if (handle == IntPtr.Zero) { denied++; break; }
-                        try {
-                            foreach (var patch in owned) {
-                                byte[] bytes;
-                                if (!Read(handle, patch.Address, Replacement[patch.Pattern].Length, out bytes) || !BytesEqual(bytes, Replacement[patch.Pattern])) Patches.Remove(patch);
-                            }
-                            if ((Enabled || probe) && !Patches.Any(p=>p.Pid==process.Id && p.Started==started)) matches += Scan(handle,module.BaseAddress.ToInt64(),module.ModuleMemorySize,process.Id,started,Enabled);
-                        } finally { CloseHandle(handle); }
-                        break;
-                    }
+                        foreach (var patch in owned) {
+                            byte[] bytes;
+                            if (!Read(handle, patch.Address, Replacement[patch.Pattern].Length, out bytes) || !BytesEqual(bytes, Replacement[patch.Pattern])) Patches.Remove(patch);
+                        }
+                        if (Enabled || probe) matches += Scan(handle, modBase, modSize, process.Id, started, Enabled);
+                    } finally { CloseHandle(handle); }
                 } catch { denied++; }
             }
         }

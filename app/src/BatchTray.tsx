@@ -20,6 +20,8 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
     queue: [],
   });
   const [periodEnabled, setPeriodEnabled] = i.useState(false);
+  const [periodBusy, setPeriodBusy] = i.useState(false);
+  const [launchingJy, setLaunchingJy] = i.useState(false);
   const [webTask, setWebTask] = i.useState<any>(null);
 
   const api = (globalThis as any).window?.blackObsidian || (globalThis as any).blackObsidian;
@@ -76,11 +78,27 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
   }, [api, onNavigate]);
 
   const togglePeriodKeeper = async () => {
+    if (periodBusy) return;
+    setPeriodBusy(true);
     try {
-      const next = await api?.setPeriodKeeperEnabled?.(!periodEnabled, 'period');
+      const next = await api?.setPeriodKeeperEnabled?.(!periodEnabled, 'compatible');
       if (next) setPeriodEnabled(Boolean(next.enabled));
     } catch {
       /* ignore */
+    } finally {
+      setPeriodBusy(false);
+    }
+  };
+
+  const handleLaunchJianying = async () => {
+    if (launchingJy) return;
+    setLaunchingJy(true);
+    try {
+      await api?.quickLaunch?.('launch');
+    } catch {
+      /* ignore */
+    } finally {
+      setTimeout(() => setLaunchingJy(false), 1800);
     }
   };
 
@@ -266,10 +284,12 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
               <div className="bos-tray-mod-actions">
                 <button
                   type="button"
-                  className={periodEnabled ? 'is-accent' : ''}
+                  className={`${periodEnabled ? 'is-accent' : ''}${periodBusy ? ' is-loading' : ''}`}
+                  disabled={periodBusy}
                   onClick={togglePeriodKeeper}
                 >
-                  {periodEnabled ? '关闭句号守护' : '开启句号守护'}
+                  {periodBusy && <span className="bos-btn-spinner" aria-hidden="true" />}
+                  {periodBusy ? (periodEnabled ? '关闭中…' : '启动中…') : (periodEnabled ? '关闭句号守护' : '开启句号守护')}
                 </button>
                 <button type="button" onClick={() => { onNavigate('webai'); setExpanded(false); }}>
                   国内 AI 协同 →
@@ -283,8 +303,14 @@ export function BatchTray({ activeTab, onNavigate, automation }: BatchTrayProps)
             <button type="button" onClick={() => api?.companionAction?.('show', true)}>
               🐾 桌面磁吸精灵
             </button>
-            <button type="button" onClick={() => api?.quickLaunch?.('launch')}>
-              🚀 启动剪映
+            <button
+              type="button"
+              className={launchingJy ? 'is-loading' : ''}
+              disabled={launchingJy}
+              onClick={handleLaunchJianying}
+            >
+              {launchingJy ? <span className="bos-btn-spinner" aria-hidden="true" /> : '🚀 '}
+              {launchingJy ? '正在启动剪映…' : '启动剪映'}
             </button>
             <button type="button" onClick={() => api?.updaterAction?.('check')}>
               🔄 检查更新

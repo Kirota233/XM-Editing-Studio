@@ -1887,3 +1887,28 @@
 .bos-jy-panels > .bos-jy-panel {
   grid-column: 1 / -1 !important;
 }
+
+/* In-button startup waiting spinner & loading state */
+button.is-loading {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 7px !important;
+  position: relative;
+  cursor: progress !important;
+}
+.bos-btn-spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: bosBtnSpin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes bosBtnSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}

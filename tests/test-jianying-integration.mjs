@@ -101,7 +101,7 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.6\.2/);
+  assert.match(textOf(titleBar), /v1\.6\.3/);
   const { companionMarkup } = await import('../app/electron/companion-dock.mjs');
   const orbMarkup = companionMarkup.orbHtml();
   for (const gif of ['default.gif', 'angry.gif', 'comfort.gif', 'enjoy.gif', 'cry.gif', 'play.gif', 'float.gif']) {

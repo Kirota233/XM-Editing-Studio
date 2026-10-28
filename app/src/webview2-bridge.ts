@@ -308,7 +308,7 @@ if (wv && !window.blackObsidian) {
     getPeriodKeeperStatus: () => invokeHost('period-status'),
     probePeriodKeeper: () => invokeHost('period-probe'),
     setPeriodKeeperEnabled: (enabled: boolean, mode: string) => invokeHost('period-enabled', { enabled, mode }),
-    copySubtitleText: (text: string) => invokeHost('period-copy', { text: normalizeSubtitlePunctuation(text) }),
+    copySubtitleText: (text: string) => invokeHost('period-copy', { text: String(text ?? '') }),
 
     jianyingAction: (action: string, args: any, connection: any) => {
       if (connection) lastJyConnection = connection;

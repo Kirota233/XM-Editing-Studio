@@ -1,1 +1,1 @@
-export const HELPER_SHA256 = '9405284cde89dc6c90c5a11e500e14baa3b7e7faf4efbd8dc0ba3a146ff6ae4c';
+export const HELPER_SHA256 = '487a11f6dfcc1bf6559ac062f407b89bb02ea76ce00d060a102168b00a25c29f';

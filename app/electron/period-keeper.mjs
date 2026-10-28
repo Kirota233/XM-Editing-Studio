@@ -46,13 +46,7 @@ export function createPeriodKeeper(resourcesDirectory, { clipboard } = {}) {
   async function checkUpstreamStatus() {
     if (Date.now() - checkedAt < 300000) { if (!allowed) throw new Error('原项目当前暂停此功能，请稍后再试。'); return; }
     let data;
-    try { const response = await fetch('https://raw.githubusercontent.com/Kirota233/JianYing-Period-Keeper/master/auth.json', { signal: AbortSignal.timeout(3000) }); if (response.ok) data = await response.json(); } catch { /* upstream also permits offline use */ }
-    if (!data) {
-      try {
-        const response = await fetch('https://api.github.com/repos/Kirota233/JianYing-Period-Keeper/contents/auth.json?ref=master', { signal: AbortSignal.timeout(4000), headers: { 'User-Agent': 'Xiaoma-Period-Keeper' } });
-        if (response.ok) { const body = await response.json(); data = JSON.parse(Buffer.from(body.content, 'base64').toString('utf8')); }
-      } catch { /* keep the upstream offline behavior */ }
-    }
+    try { const response = await fetch('https://raw.githubusercontent.com/Kirota233/JianYing-Period-Keeper/master/auth.json', { signal: AbortSignal.timeout(1200) }); if (response.ok) data = await response.json(); } catch { /* upstream also permits offline use */ }
     checkedAt = Date.now(); allowed = !['blocked', 'destroy'].includes(data?.status);
     if (!allowed) throw new Error('原项目当前暂停此功能，请稍后再试。');
   }

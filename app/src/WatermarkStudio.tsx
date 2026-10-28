@@ -105,6 +105,7 @@ export interface WatermarkStudioProps {
 
 export function WatermarkStudio({ active }: WatermarkStudioProps) {
   const [state, setState] = i.useState<WatermarkState>(DEFAULT_WATERMARK_STATE);
+  const [startingBatch, setStartingBatch] = i.useState(false);
   const [dragging, setDragging] = i.useState(false);
   const [notice, setNotice] = i.useState('');
   const [textDraft, setTextDraft] = i.useState(DEFAULT_WATERMARK_STATE.settings.watermarkText);
@@ -199,12 +200,16 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
   };
 
   const handleStartBatch = async () => {
+    if (startingBatch) return;
+    setStartingBatch(true);
     try {
       setNotice('');
       const next = await bridge?.startWatermarkBatch?.();
       if (next) syncState(next);
     } catch (err: any) {
       setNotice(err?.message || '启动批量水印失败');
+    } finally {
+      setStartingBatch(false);
     }
   };
 
@@ -537,11 +542,12 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
               ) : (
                 <button
                   type="button"
-                  className="bos-wm-btn-primary"
-                  disabled={pendingCount === 0}
+                  className={`bos-wm-btn-primary${startingBatch ? ' is-loading' : ''}`}
+                  disabled={pendingCount === 0 || startingBatch}
                   onClick={handleStartBatch}
                 >
-                  开始硬件加速合成 ({pendingCount})
+                  {startingBatch && <span className="bos-btn-spinner" aria-hidden="true" />}
+                  {startingBatch ? '正在启动引擎…' : `开始硬件加速合成 (${pendingCount})`}
                 </button>
               )}
             </div>

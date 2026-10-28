@@ -32,6 +32,9 @@
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   .btn.primary { background: #ffcf6e; border-color: #ffcf6e; color: #1c1206; }
   .btn.danger { border-color: rgba(248,113,113,.6); color: #fca5a5; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .btn-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: bspin .65s linear infinite; flex-shrink: 0; }
+  @keyframes bspin { to { transform: rotate(360deg); } }
   .bar { height: 5px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; }
   .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcf6e, #ff9d5c); transition: width .25s; }
   .log { font-size: 10.5px; color: #c4cbd4; background: rgba(0,0,0,.22); border-radius: 8px; padding: 6px 8px; line-height: 1.5;
@@ -98,9 +101,24 @@
     const api = window.blackObsidian, $ = id => document.getElementById(id);
     let state = null, toastTimer = 0;
     const toast = msg => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); };
-    const act = async (action, value) => {
-      try { const res = await api.companionAction(action, value); if (res && res.error) toast(res.error); else if (res) render(res); }
-      catch (e) { toast(String(e && e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')); }
+    const act = async (action, value, btnEl, loadingLabel) => {
+      let origHtml = '';
+      if (btnEl && !btnEl.disabled) {
+        origHtml = btnEl.innerHTML;
+        btnEl.disabled = true;
+        btnEl.innerHTML = '<span class="btn-spin"></span>' + (loadingLabel || '启动中…');
+      }
+      try {
+        const res = await api.companionAction(action, value);
+        if (res && res.error) toast(res.error);
+        else if (res) render(res);
+      } catch (e) {
+        toast(String(e && e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
+      } finally {
+        if (btnEl && origHtml) {
+          setTimeout(() => { btnEl.disabled = false; if (btnEl.querySelector('.btn-spin')) btnEl.innerHTML = origHtml; }, action === 'launch-jy' ? 1400 : 250);
+        }
+      }
     };
     const statusText = { pending: '排队', processing: '合成中', done: '完成', error: '失败', cancelled: '取消' };
     function render(s) {
@@ -144,16 +162,16 @@
     }
     $('closeBtn').onclick = () => act('panel', false);
     $('dockBtn').onclick = () => act('toggle-dock');
-    $('jyScan').onclick = () => act('jy-scan');
-    $('jyExport').onclick = () => act('jy-export');
-    $('jyExtract').onclick = () => act('jy-extract');
+    $('jyScan').onclick = () => act('jy-scan', null, $('jyScan'), '扫描中…');
+    $('jyExport').onclick = () => act('jy-export', null, $('jyExport'), '启动导出…');
+    $('jyExtract').onclick = () => act('jy-extract', null, $('jyExtract'), '提取中…');
     $('jyStop').onclick = () => act('jy-stop');
     $('modalYes').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: true });
     $('modalNo').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: false });
     $('wmAdd').onclick = () => act('wm-add');
-    $('wmRun').onclick = () => act(state?.watermark?.running ? 'wm-cancel' : 'wm-start');
+    $('wmRun').onclick = () => act(state?.watermark?.running ? 'wm-cancel' : 'wm-start', null, $('wmRun'), '启动中…');
     $('pkSwitch').onclick = () => act('toggle-period');
-    $('launchJy').onclick = () => act('launch-jy');
+    $('launchJy').onclick = () => act('launch-jy', null, $('launchJy'), '启动剪映中…');
     $('openMain').onclick = () => act('navigate', '');
     api?.onCompanionState?.(render);
     act('sync');

@@ -13,7 +13,7 @@ export async function copySubtitleText(text: string) {
 
 export function PeriodKeeper({ text }: { text: string }) {
   const [state, setState] = i.useState(null as any);
-  const [busy, setBusy] = i.useState(false);
+  const [busyAction, setBusyAction] = i.useState('' as '' | 'toggle' | 'copy');
   const [error, setError] = i.useState('');
   const [notice, setNotice] = i.useState('');
   const [collapsed, toggleCollapsed] = usePanelCollapsed('period-keeper');
@@ -21,6 +21,7 @@ export function PeriodKeeper({ text }: { text: string }) {
   const available = typeof api?.getPeriodKeeperStatus === 'function';
   const latestText = i.useRef(text);
   latestText.current = text;
+  const busy = busyAction !== '';
 
   i.useEffect(() => {
     if (!available) return;
@@ -38,14 +39,18 @@ export function PeriodKeeper({ text }: { text: string }) {
     return () => { active = false; clearTimeout(timer); };
   }, []);
 
-  const perform = async (operation: () => Promise<void>) => {
-    setBusy(true); setError(''); setNotice('');
+  const perform = async (kind: 'toggle' | 'copy', operation: () => Promise<void>) => {
+    setBusyAction(kind); setError(''); setNotice('');
     try { await operation(); }
     catch (err: any) { setError(err.message || '操作失败。'); }
-    finally { setBusy(false); }
+    finally { setBusyAction(''); }
   };
 
   const copy = async () => {
+    if (available && !state?.enabled && typeof api?.setPeriodKeeperEnabled === 'function') {
+      const enabledState = await api.setPeriodKeeperEnabled(true, 'compatible');
+      setState(enabledState);
+    }
     const result = await copySubtitleText(latestText.current);
     setNotice(result.clipboardProtected ? `已复制 ${result.copiedLines} 行（已启用标点保护）` : '已复制标准字幕文本');
   };
@@ -65,20 +70,23 @@ export function PeriodKeeper({ text }: { text: string }) {
           <button
             type="button"
             role="switch"
+            className={busyAction === 'toggle' ? 'is-loading' : ''}
             aria-label="剪映标点保留"
             aria-checked={!!state?.enabled}
             disabled={!available || !state || busy}
-            onClick={() => perform(async () => { setState(await api.setPeriodKeeperEnabled(!state.enabled, 'compatible')); })}
+            onClick={() => perform('toggle', async () => { setState(await api.setPeriodKeeperEnabled(!state.enabled, 'compatible')); })}
           >
-            {state?.enabled ? '关闭保留' : '开启保留'}
+            {busyAction === 'toggle' && <span className="bos-btn-spinner" aria-hidden="true" />}
+            {busyAction === 'toggle' ? (state?.enabled ? '关闭中…' : '启动中…') : (state?.enabled ? '关闭保留' : '开启保留')}
           </button>
           <button
             type="button"
-            className="bos-script-primary"
+            className={`bos-script-primary${busyAction === 'copy' ? ' is-loading' : ''}`}
             disabled={!text.trim() || busy}
-            onClick={() => perform(copy)}
+            onClick={() => perform('copy', copy)}
           >
-            复制到剪映
+            {busyAction === 'copy' && <span className="bos-btn-spinner" aria-hidden="true" />}
+            {busyAction === 'copy' ? '复制中…' : '复制到剪映'}
           </button>
           <button
             type="button"
