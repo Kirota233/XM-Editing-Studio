@@ -34,10 +34,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js 24
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: "24"
           cache: "npm"
@@ -71,18 +71,18 @@ jobs:
       - name: Install Node dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
-      - name: Build renderer & watermarker bundles
-        run: npm run build
-
-      - name: Build native C# helpers (PeriodKeeper, JianyingEngine)
+      - name: Build native C# helpers & XMStudioHost
         shell: pwsh
         run: |
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-native.ps1
 
+      - name: Build renderer & watermarker bundles
+        run: npm run build
+
       - name: Run unit & integration test suites
         run: npm test
 
-      - name: Package Electron application
+      - name: Package Native WebView2 application
         run: npm run package
 
       - name: Build NSIS installer & SHA256SUMS.txt
@@ -91,7 +91,7 @@ jobs:
           powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release.ps1 -Version "${{ steps.meta.outputs.version }}"
 
       - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64
           path: artifacts/release/*
@@ -100,15 +100,17 @@ jobs:
 
       - name: Publish GitHub Release
         if: github.event_name != 'workflow_dispatch' || inputs.publish_release == true
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          target_commitish: ${{ github.sha }}
-          name: XM Editing Studio ${{ steps.meta.outputs.tag }}
-          body_path: CHANGELOG.md
-          draft: false
-          prerelease: false
-          overwrite: true
-          files: |
-            artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64-Setup.exe
-            artifacts/release/SHA256SUMS.txt
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.meta.outputs.tag }}"
+          $setup = "artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64-Setup.exe"
+          $sums = "artifacts/release/SHA256SUMS.txt"
+          gh release view $tag > $null 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $setup $sums --clobber
+            gh release edit $tag --title "XM Editing Studio $tag" --notes-file CHANGELOG.md
+          } else {
+            gh release create $tag $setup $sums --target "${{ github.sha }}" --title "XM Editing Studio $tag" --notes-file CHANGELOG.md
+          }
