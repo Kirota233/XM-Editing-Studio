@@ -83,7 +83,7 @@ test('workspace removes music requirements and SRT restoration while preserving 
   assert.doesNotMatch(textOf(tree), /配乐要求|选择 SRT|下载标点还原/);
   assert.match(textOf(tree), /原工具方式/); assert.match(textOf(tree), /复制到剪映/);
 });
-test('right quick rail is removed while the left sidebar keeps an accessible resize handle and bottom-left collapsed dependencies/author credits', () => {
+test('right quick rail is removed while the left sidebar keeps an accessible resize handle and bottom-left collapsed dependencies/author credits', async () => {
   assert.equal(ui.QuickRail, undefined);
   const handle = ui.SidebarResizer(); assert.equal(handle.props.role, 'separator'); assert.equal(handle.props['aria-orientation'], 'vertical');
   const credits = ui.SidebarCredits();
@@ -101,7 +101,14 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.6\.1/);
+  assert.match(textOf(titleBar), /v1\.6\.2/);
+  const { companionMarkup } = await import('../app/electron/companion-dock.mjs');
+  const orbMarkup = companionMarkup.orbHtml();
+  for (const gif of ['default.gif', 'angry.gif', 'comfort.gif', 'enjoy.gif', 'cry.gif', 'play.gif', 'float.gif']) {
+    assert.match(orbMarkup, new RegExp(`/miao/${gif}`));
+  }
+  assert.doesNotMatch(orbMarkup, /class="tag"/);
+  assert.doesNotMatch(orbMarkup, /backdrop-filter/);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {

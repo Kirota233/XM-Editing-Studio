@@ -1,7 +1,6 @@
-# XM剪辑台 1.6.1 更新日志
+# XM剪辑台 1.6.2 更新日志
 
-## 1. 彻底移除 Electron 浏览器内核：原生 C# + 系统 WebView2 宿主重构（安装包 486 KB）
-- **零浏览器内核打包 (`XMStudioHost.cs`)**：废除原版 180 MB 的 Electron Chromium 打包运行时，主程序重构为仅 **82 KB** 的原生 C# 桌面宿主（`小马剪辑台.exe`），直接调用 Windows 10 / 11 系统底层内置的 `Edge WebView2 Runtime` 与原生 DWM 亚克力窗口 API。
-- **安装包体积从 89.36 MB 降至 0.47 MB / 486 KB（缩减 99.4%）**：完整 `Setup.exe` 安装包体积仅 **486 KB（解压后总大小仅 1.8 MB）**，100% 保留空间毛玻璃（`backdrop-filter: blur(24px)`）、极光流动光斑、弹簧动效与内嵌 DeepSeek/豆包官方网页能力。
-- **月薪喵融入 `DesktopPet-Miao` 可爱待机动画与气泡交互**：参考开源项目 `sprmorn/DesktopPet-Miao`，剔除繁琐数值与喂食系统，保留粉色圆角对话气泡、早/中/晚/深夜时间感知问候、双击开心弹跳（`jumpJoy`）以及闲暇时随机切换 4 种可爱待机神态（歪头蹭蹭冒爱心 `💕`、眯眼得意 `✨`、低头看片 `🎬`、打瞌睡吹泡泡 `💤`）。
-- **CI 构建与构建环境优化**：升级 GitHub Actions 至 `@v7`（原生支持 Node 24，消除 Node 20 弃用警告），修复 Windows PowerShell 编码与原生 C# 组件预编译顺序。
+## 1. 月薪喵原版 GIF IP 形象与纯透明无边框桌面伴侣
+- **1:1 接入 `DesktopPet-Miao` 全套 7 个原版 GIF 动图素材**：废除手绘 CSS 猫咪与底部名牌，直接内置原项目布偶猫「月薪喵」全套 7 组透明 GIF 动图（`default.gif` 默认捂嘴笑、`comfort.gif` 贴贴蹭蹭、`enjoy.gif` 开心摇摆跳舞、`play.gif` 躺被窝刷手机星星眼、`cry.gif` 拍小肚皮、`float.gif` 休息打盹、`angry.gif` 踩奶瓶生气）。
+- **真正纯透明无边框桌面悬浮窗 (`UpdateLayeredWindow`)**：移除悬浮窗毛玻璃背景、圆角边框与底部名牌，采用 Win32 逐像素 Alpha 透明图层渲染（猫咪以外的区域 100% 透明且鼠标穿透），搭配原版粉色圆角白色气泡框（`#FFB6C1`）、待机呼吸与随机切换动画、双击跳跃及撞墙生气反馈。
+- **原生 C# + 系统 WebView2 极小安装包**：不捆绑任何浏览器内核，完整 `Setup.exe` 安装包体积保持在 **~2 MB** 以内。

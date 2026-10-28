@@ -9,7 +9,7 @@ const { BrowserWindow, screen } = electron || {};
  * - Panel window: separate always-on-top frosted-glass (Windows 11 acrylic) control panel that
  *   operates Jianying automation / watermark / punctuation guard in place, like a Jianying plugin.
  */
-const ORB_SIZE = { width: 156, height: 184 };
+const ORB_SIZE = { width: 200, height: 230 };
 const PANEL_SIZE = { width: 360, height: 584 };
 
 export function supportsAcrylic(release = os.release()) {
@@ -19,130 +19,62 @@ export function supportsAcrylic(release = os.release()) {
 
 const SHARED_STYLE = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent;
-    font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: transparent !important; border: none !important; box-shadow: none !important;
+    font-family: "Microsoft YaHei", "Segoe UI Variable Text", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
   button { font: inherit; cursor: pointer; }
 `;
 
 function orbHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵</title><style>${SHARED_STYLE}
-  .stage { position: relative; width: 156px; height: 184px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 6px; cursor: pointer; -webkit-app-region: no-drag; }
-  /* Cute Speech Bubble inspired by sprmorn/DesktopPet-Miao */
-  .bubble { position: absolute; top: 2px; left: 6px; right: 6px; padding: 5px 9px; border-radius: 12px;
-    background: rgba(255, 252, 248, 0.96); border: 1.5px solid #ffb6c1; color: #3a2314;
-    font-size: 10.5px; font-weight: 700; line-height: 1.35; text-align: center;
-    box-shadow: 0 6px 16px rgba(0,0,0,.32); opacity: 0; transform: translateY(6px) scale(.92);
-    transition: opacity .24s ease, transform .24s cubic-bezier(.34,1.56,.64,1); pointer-events: none; z-index: 10; }
-  .bubble.show { opacity: 1; transform: translateY(0) scale(1); }
-  .bubble::after { content: ""; position: absolute; left: 50%; bottom: -6px; margin-left: -5px;
-    width: 8px; height: 8px; background: rgba(255, 252, 248, 0.96); border-right: 1.5px solid #ffb6c1; border-bottom: 1.5px solid #ffb6c1; transform: rotate(45deg); }
-  /* Floating emote particles (hearts / zzz / sparkles) */
-  .emote { position: absolute; top: 38px; right: 16px; font-size: 15px; opacity: 0; pointer-events: none; z-index: 8; }
-  .stage[data-pose="comfort"] .emote, .stage[data-pose="enjoy"] .emote, .stage[data-pose="sleep"] .emote, .stage[data-pose="play"] .emote {
-    animation: floatUp 2.2s ease-in-out infinite;
-  }
-  @keyframes floatUp { 0% { opacity: 0; transform: translateY(6px) scale(.7) } 40% { opacity: 1; transform: translateY(-4px) scale(1.08) } 100% { opacity: 0; transform: translateY(-14px) scale(.9) } }
-
-  .cat { position: relative; width: 96px; height: 92px; animation: bob 3.2s ease-in-out infinite; transform-origin: center bottom; transition: transform .2s cubic-bezier(.34,1.56,.64,1); }
-  @keyframes bob { 0%,100% { transform: translateY(0) scale(1) } 50% { transform: translateY(-4px) scale(1.02, .98) } }
-  /* Random Idle Pose Animations (DesktopPet-Miao style) */
-  .stage[data-pose="comfort"] .cat { animation: swayComfort 1.8s ease-in-out infinite; }
-  @keyframes swayComfort { 0%,100% { transform: rotate(-6deg) translateY(0) } 50% { transform: rotate(6deg) translateY(-3px) } }
-  .stage[data-pose="enjoy"] .cat { animation: happyPulse 1.1s ease-in-out infinite; }
-  @keyframes happyPulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.07, .94) translateY(-4px) } }
-  .stage[data-pose="sleep"] .cat { animation: sleepBreathe 3.8s ease-in-out infinite; }
-  @keyframes sleepBreathe { 0%,100% { transform: scale(1, .96) translateY(2px) } 50% { transform: scale(1.04, .92) translateY(4px) } }
-  .stage[data-pose="play"] .cat { animation: playNod 1.4s ease-in-out infinite; }
-  @keyframes playNod { 0%,100% { transform: translateY(0) rotate(-3deg) } 50% { transform: translateY(-2px) rotate(4deg) } }
-  .stage.jumping .cat { animation: jumpJoy .52s cubic-bezier(.22,1,.36,1); }
-  @keyframes jumpJoy { 0% { transform: scale(1.12,.86) translateY(0) } 45% { transform: scale(.94,1.08) translateY(-24px) } 100% { transform: scale(1) translateY(0) } }
-
-  .ring { position: absolute; left: 50%; top: 50%; width: 100px; height: 100px; margin: -46px 0 0 -50px; transform: rotate(-90deg); pointer-events: none; }
-  .ring circle { fill: none; stroke-width: 4; }
-  .ring .bg { stroke: rgba(255,255,255,.14); }
-  .ring .fg { stroke: #ffcf6e; stroke-linecap: round; transition: stroke-dashoffset .3s ease; filter: drop-shadow(0 0 4px #ffb347); }
-  .ear { position: absolute; top: 2px; width: 30px; height: 30px; border-radius: 6px 22px 4px 22px;
-    background: linear-gradient(140deg, #ffe0b0, #ffb562); border: 2px solid #4a2f1d; transition: transform .28s cubic-bezier(.34,1.56,.64,1); }
-  .ear::after { content: ""; position: absolute; inset: 6px; border-radius: 4px 14px 2px 14px; background: #ff9fb3; opacity: .85; }
-  .ear.l { left: 12px; transform: rotate(-12deg); }
-  .ear.r { right: 12px; transform: rotate(102deg); }
-  .cat:hover .ear.l, .stage[data-pose="enjoy"] .ear.l { transform: rotate(-26deg) translateY(-2px); }
-  .cat:hover .ear.r, .stage[data-pose="enjoy"] .ear.r { transform: rotate(116deg) translateY(-2px); }
-  .head { position: absolute; left: 8px; right: 8px; top: 16px; bottom: 2px; border-radius: 44% 44% 40% 40%;
-    background: radial-gradient(circle at 35% 28%, #fff4de, #ffd08a 58%, #f5a24a); border: 2px solid #4a2f1d;
-    box-shadow: 0 12px 26px rgba(0,0,0,.45), inset 0 -6px 10px rgba(201,112,32,.35); }
-  .face { position: absolute; inset: 0; cursor: pointer; border-radius: inherit; }
-  .stripe { position: absolute; top: 4px; width: 4px; height: 12px; border-radius: 4px; background: #d9822b; left: 50%; }
-  .stripe.a { margin-left: -9px; transform: rotate(-12deg); } .stripe.b { margin-left: -2px; } .stripe.c { margin-left: 5px; transform: rotate(12deg); }
-  .eye { position: absolute; top: 30px; width: 9px; height: 12px; border-radius: 50%; background: #2a1a10; animation: blink 4.4s infinite; transition: all .2s; }
-  .eye::after { content: ""; position: absolute; top: 2px; left: 2px; width: 3px; height: 3px; border-radius: 50%; background: #fff; }
-  .eye.l { left: 22px; } .eye.r { right: 22px; }
-  /* Happy curved eyes in comfort / enjoy pose, closed eyes in sleep pose */
-  .stage[data-pose="comfort"] .eye, .stage[data-pose="enjoy"] .eye {
-    height: 6px; top: 33px; background: transparent; border-top: 3px solid #2a1a10; border-radius: 50% 50% 0 0; animation: none;
-  }
-  .stage[data-pose="comfort"] .eye::after, .stage[data-pose="enjoy"] .eye::after, .stage[data-pose="sleep"] .eye::after { display: none; }
-  .stage[data-pose="sleep"] .eye {
-    height: 5px; top: 35px; background: transparent; border-bottom: 2.5px solid #2a1a10; border-radius: 0 0 50% 50%; animation: none;
-  }
-  @keyframes blink { 0%,93%,97%,100% { transform: scaleY(1) } 95% { transform: scaleY(.1) } }
-  .nose { position: absolute; top: 44px; left: 50%; margin-left: -4px; width: 8px; height: 6px; border-radius: 50% 50% 60% 60%; background: #ff7d96; }
-  .mouth { position: absolute; top: 49px; left: 50%; margin-left: -9px; width: 18px; height: 8px; }
-  .mouth::before, .mouth::after { content: ""; position: absolute; top: 0; width: 9px; height: 7px; border: 2px solid #4a2f1d; border-top: 0; border-radius: 0 0 9px 9px; }
-  .mouth::before { left: 0; } .mouth::after { right: 0; }
-  .blush { position: absolute; top: 46px; width: 12px; height: 6px; border-radius: 50%; background: rgba(255,110,145,.62); transition: transform .2s; }
-  .blush.l { left: 10px; } .blush.r { right: 10px; }
-  .stage[data-pose="comfort"] .blush, .stage[data-pose="enjoy"] .blush { transform: scale(1.25); background: rgba(255,95,135,.8); }
-  .whisker { position: absolute; top: 46px; width: 16px; height: 2px; border-radius: 2px; background: rgba(74,47,29,.6); }
-  .whisker.l1 { left: -6px; transform: rotate(8deg); } .whisker.l2 { left: -6px; top: 52px; transform: rotate(-6deg); }
-  .whisker.r1 { right: -6px; transform: rotate(-8deg); } .whisker.r2 { right: -6px; top: 52px; transform: rotate(6deg); }
-  .paw { position: absolute; bottom: -3px; width: 18px; height: 12px; border-radius: 50%; background: #fff4de; border: 2px solid #4a2f1d; transition: transform .25s; }
-  .paw.l { left: 18px; } .paw.r { right: 26px; }
-  .stage[data-pose="play"] .paw.l { transform: translateY(-4px) rotate(-12deg); }
-  .coin { position: absolute; right: -6px; bottom: -4px; width: 30px; height: 30px; border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #fff3b0, #ffc93c 60%, #d99a12); border: 2px solid #7a4d07;
-    color: #7a4d07; font-size: 13px; font-weight: 900; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 4px 10px rgba(0,0,0,.4); animation: spin 6s ease-in-out infinite; }
-  @keyframes spin { 0%,80%,100% { transform: rotateY(0) } 90% { transform: rotateY(180deg) } }
-  .tag { margin-top: 6px; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; letter-spacing: .5px;
-    background: rgba(20,16,12,.82); color: #ffd58a; border: 1px solid rgba(255,207,110,.55); backdrop-filter: blur(10px);
-    cursor: pointer; white-space: nowrap; }
-  .stage.busy .tag { color: #1c1206; background: #ffcf6e; }
+  .stage { position: relative; width: 200px; height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-bottom: 4px; cursor: pointer; background: transparent !important; border: none !important; box-shadow: none !important; -webkit-app-region: no-drag; }
+  /* SpeechBubble 1:1 from sprmorn/DesktopPet-Miao (white rounded rect + 2px #FFB6C1 pink border, zero frosted border on window) */
+  .bubble { position: absolute; top: 4px; left: 50%; transform: translateX(-50%) translateY(6px) scale(.92);
+    max-width: 192px; width: max-content; padding: 7px 14px; border-radius: 15px;
+    background: #ffffff; border: 2px solid #FFB6C1; color: #000000;
+    font-size: 13px; font-weight: 700; line-height: 1.35; text-align: center; white-space: normal; word-break: break-word;
+    opacity: 0; transition: opacity .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1); pointer-events: none; z-index: 10; }
+  .bubble.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  .pet-wrap { position: relative; width: 176px; height: 176px; display: flex; align-items: center; justify-content: center;
+    background: transparent !important; border: none !important; box-shadow: none !important; }
+  .pet-gif { width: 172px; height: 172px; object-fit: contain; background: transparent !important; border: none !important;
+    pointer-events: none; -webkit-user-drag: none; animation: idleBreathe 1.6s ease-in-out infinite; }
+  @keyframes idleBreathe { 0%,100% { transform: scale(1) } 50% { transform: scale(0.972) } }
+  .stage.jumping .pet-wrap { animation: jumpJoy .4s ease-out; }
+  @keyframes jumpJoy { 0% { transform: translateY(0) } 50% { transform: translateY(-28px) } 100% { transform: translateY(0) } }
   </style></head><body>
-  <div class="stage" id="stage" data-pose="default" title="月薪喵 · 单击展开/收起剪映插件面板，双击开心起跳，按住拖动位置">
-    <div class="bubble" id="bubble">今天也要元气满满导片哦~</div>
-    <div class="emote" id="emote">💕</div>
-    <div class="cat" id="cat">
-      <svg class="ring" viewBox="0 0 100 100"><circle class="bg" cx="50" cy="50" r="46"/><circle class="fg" id="ring" cx="50" cy="50" r="46" stroke-dasharray="289" stroke-dashoffset="289"/></svg>
-      <div class="ear l"></div><div class="ear r"></div>
-      <div class="head">
-        <div class="face" id="face">
-          <span class="stripe a"></span><span class="stripe b"></span><span class="stripe c"></span>
-          <span class="eye l"></span><span class="eye r"></span>
-          <span class="blush l"></span><span class="blush r"></span>
-          <span class="nose"></span><span class="mouth"></span>
-          <span class="whisker l1"></span><span class="whisker l2"></span><span class="whisker r1"></span><span class="whisker r2"></span>
-        </div>
-      </div>
-      <div class="paw l"></div><div class="paw r"></div>
-      <div class="coin">薪</div>
+  <div class="stage" id="stage" data-pose="default">
+    <div class="bubble" id="bubble"></div>
+    <div class="pet-wrap" id="pet-wrap">
+      <img class="pet-gif" id="pet-gif" src="/miao/default.gif" alt="月薪喵" draggable="false" />
     </div>
-    <div class="tag" id="tag">月薪喵</div>
   </div>
   <script>
     const api = window.blackObsidian;
-    const ring = document.getElementById('ring'), tag = document.getElementById('tag'), stage = document.getElementById('stage');
-    const bubble = document.getElementById('bubble'), emote = document.getElementById('emote');
-    let bubbleTimer = 0, poseTimer = 0;
+    const stage = document.getElementById('stage');
+    const bubble = document.getElementById('bubble');
+    const petGif = document.getElementById('pet-gif');
+    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default';
 
-    const IDLE_STATES = [
-      { pose: 'comfort', emote: '💕', lines: ['蹭蹭你~ 剪片辛苦啦 🥰', '摸摸头，今天一定爆款！', '我就静静陪着你剪片~'] },
-      { pose: 'enjoy', emote: '✨', lines: ['月薪喵帮你盯紧导出队列！', '啦啦啦~ 我是快乐的导片小猫咪', '有我在，句号绝不丢失！'] },
-      { pose: 'play', emote: '🎬', lines: ['在忙什么大片呀？给我看看~', '批量水印和导出随时待命！', '工作累了就看我一眼吧 ✨'] },
-      { pose: 'sleep', emote: '💤', lines: ['呼噜噜…小憩三秒钟 💤', '待机省电模式喵~'] }
+    const GIF_MAP = {
+      default: '/miao/default.gif',
+      angry: '/miao/angry.gif',
+      comfort: '/miao/comfort.gif',
+      enjoy: '/miao/enjoy.gif',
+      cry: '/miao/cry.gif',
+      play: '/miao/play.gif',
+      float: '/miao/float.gif'
+    };
+
+    const IDLE_POOL = [
+      { key: 'comfort', duration: 5500, lines: ['好舒服呀~ 蹭蹭~ 🥰', '剪片辛苦啦，摸摸头~', '我就静静陪着你剪片~'] },
+      { key: 'enjoy', duration: 5500, lines: ['今天也要开心导片哦 ✨', '啦啦啦~ 爆款预定！', '有我在，标点句号绝不丢！'] },
+      { key: 'play', duration: 6000, lines: ['一起来玩手机呀~ 📱', '刷会儿手机放松一下眼睛吧~'] },
+      { key: 'float', duration: 6000, lines: ['我去休息一下啦~ 💤', '呼噜噜…充个电~'] },
+      { key: 'cry', duration: 5000, lines: ['拍拍小肚皮~ 陪陪我好不好~', '渲染队列交给我盯紧啦~'] }
     ];
 
-    function say(text, duration = 3200) {
+    function showMessage(text, duration = 2600) {
       if (!text) return;
       bubble.textContent = text;
       bubble.classList.add('show');
@@ -150,43 +82,47 @@ function orbHtml() {
       bubbleTimer = setTimeout(() => bubble.classList.remove('show'), duration);
     }
 
-    function setPose(pose, emoteChar, duration = 4800) {
-      stage.dataset.pose = pose || 'default';
-      if (emoteChar) emote.textContent = emoteChar;
-      clearTimeout(poseTimer);
-      if (pose && pose !== 'default') {
-        poseTimer = setTimeout(() => { stage.dataset.pose = 'default'; }, duration);
+    function switchGif(key, message, duration = 5200) {
+      const target = GIF_MAP[key] || GIF_MAP.default;
+      if (currentKey !== key) {
+        currentKey = key;
+        petGif.src = target;
+      }
+      stage.dataset.pose = key;
+      if (message) showMessage(message, Math.min(duration, 3200));
+      clearTimeout(gifTimer);
+      if (key !== 'default') {
+        gifTimer = setTimeout(() => {
+          currentKey = 'default';
+          petGif.src = GIF_MAP.default;
+          stage.dataset.pose = 'default';
+        }, duration);
       }
     }
 
-    // Time-aware greeting on startup (adapted from DesktopPet-Miao)
+    // Time-of-day greeting (from DesktopPet-Miao pet.py)
     (function greetByTime() {
       const h = new Date().getHours();
-      if (h >= 5 && h < 11) { setPose('enjoy', '☀️', 4500); say('早上好呀！今天也要元气满满！'); }
-      else if (h >= 11 && h < 17) { setPose('comfort', '✨', 4500); say('中午好！剪片之余记得休息一下哦~'); }
-      else if (h >= 17 && h < 22) { setPose('comfort', '💕', 4500); say('晚上好！点击我可呼出剪映插件面板~'); }
-      else { setPose('sleep', '💤', 5500); say('夜深了…剩下的批量任务交给我吧 💤'); }
+      if (h >= 5 && h < 11) switchGif('enjoy', '早上好呀！新的一天元气满满~ ☀️', 4500);
+      else if (h >= 11 && h < 14) switchGif('comfort', '中午好！记得按时吃饭休息哦~ 🍱', 4500);
+      else if (h >= 14 && h < 19) switchGif('play', '下午好！点我可展开剪映插件面板~ ✨', 4500);
+      else if (h >= 19 && h < 23) switchGif('comfort', '晚上好！今天剪片辛苦啦~ 🥰', 4500);
+      else switchGif('float', '夜深了，早点休息哦~ 💤', 5500);
     })();
 
-    // Random idle animation switching every 8 seconds
+    // Random idle animation switching
     setInterval(() => {
-      if (stage.classList.contains('busy')) return;
-      if (Math.random() < 0.65) {
-        const pick = IDLE_STATES[Math.floor(Math.random() * IDLE_STATES.length)];
-        setPose(pick.pose, pick.emote, 4600);
-        if (Math.random() < 0.45) {
-          say(pick.lines[Math.floor(Math.random() * pick.lines.length)], 3000);
-        }
-      } else {
-        setPose('default', '');
+      if (currentKey !== 'default') return;
+      if (Math.random() < 0.6) {
+        const pick = IDLE_POOL[Math.floor(Math.random() * IDLE_POOL.length)];
+        const line = Math.random() < 0.55 ? pick.lines[Math.floor(Math.random() * pick.lines.length)] : '';
+        switchGif(pick.key, line, pick.duration);
       }
-    }, 8000);
+    }, 8500);
 
     const togglePanel = () => {
-      stage.classList.remove('jumping');
-      void stage.offsetWidth;
-      stage.classList.add('jumping');
-      setPose('enjoy', '✨', 3000);
+      petGif.style.transform = 'scale(0.94)';
+      setTimeout(() => { petGif.style.transform = ''; }, 150);
       api?.companionAction?.('panel', 'toggle');
     };
 
@@ -194,8 +130,7 @@ function orbHtml() {
       stage.classList.remove('jumping');
       void stage.offsetWidth;
       stage.classList.add('jumping');
-      setPose('comfort', '💕', 4000);
-      say('双击好开心！给你比个大大的赞 ✨', 2600);
+      switchGif('enjoy', '双击好开心！✨', 4500);
     });
 
     let down = false, dragged = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
@@ -213,7 +148,12 @@ function orbHtml() {
       if (dragged) {
         const dx = e.screenX - lastX, dy = e.screenY - lastY;
         lastX = e.screenX; lastY = e.screenY;
-        if (dx || dy) api?.companionAction?.('move-by', { dx, dy });
+        if (dx || dy) {
+          api?.companionAction?.('move-by', { dx, dy });
+          if (e.screenX <= 12 || e.screenY <= 12 || e.screenX >= window.screen.availWidth - 12 || e.screenY >= window.screen.availHeight - 12) {
+            switchGif('angry', '哎呀！撞疼我了！😣', 3000);
+          }
+        }
       }
     });
     stage.addEventListener('pointerup', e => {
@@ -221,17 +161,13 @@ function orbHtml() {
       down = false;
       try { stage.releasePointerCapture(e.pointerId); } catch {}
       if (!dragged) togglePanel();
-      else say('新位置视野真不错喵~ 🐾', 2000);
     });
 
     function render(s) {
       if (!s) return;
       const wm = s.watermark || {}, jy = s.jianying || {};
-      const busy = wm.running || jy.busy || jy.exporting;
-      const pct = wm.running ? wm.overallProgress : (jy.exporting || jy.busy ? 60 : 0);
-      ring.style.strokeDashoffset = String(289 - 289 * Math.max(0, Math.min(100, pct)) / 100);
-      stage.className = 'stage' + (busy ? ' busy' : '');
-      tag.textContent = wm.running ? '搬砖中 ' + wm.overallProgress + '%' : jy.exporting ? '导出中…' : jy.busy ? '干活中…' : s.panelOpen ? '月薪喵 ▾' : '月薪喵';
+      if (wm.running) showMessage('正在批量加水印 ' + wm.overallProgress + '% 🎬', 2000);
+      else if (jy.exporting) showMessage('正在自动导出剪映视频… 🚀', 2000);
     }
     api?.onCompanionState?.(render);
     api?.companionAction?.('sync').then(render).catch(() => {});
@@ -245,8 +181,7 @@ function panelHtml(acrylic) {
   .wrap { height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; animation: pop .26s cubic-bezier(.34,1.56,.64,1); }
   @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
   header { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.1); -webkit-app-region: drag; }
-  .avatar { width: 34px; height: 34px; border-radius: 12px; background: radial-gradient(circle at 35% 30%, #fff4de, #ffc777 60%, #f09a3e);
-    border: 2px solid #4a2f1d; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .avatar { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; background: transparent; }
   header h1 { font-size: 14px; font-weight: 800; } header p { font-size: 10.5px; color: #aab3bf; margin-top: 1px; }
   header .grow { flex: 1; min-width: 0; }
   .icon { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
@@ -289,7 +224,7 @@ function panelHtml(acrylic) {
   footer { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   </style></head><body><div class="wrap">
   <header>
-    <div class="avatar">🐱</div>
+    <img class="avatar" src="/miao/default.gif" alt="月薪喵" draggable="false" />
     <div class="grow"><h1>月薪喵 · 剪映插件</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
     <button class="icon on" id="dockBtn" title="磁吸跟随剪映窗口">🧲</button>
     <button class="icon" id="closeBtn" title="收起面板">✕</button>
@@ -461,6 +396,7 @@ export function createCompanionDock({
       y: area.y + area.height - ORB_SIZE.height - 28,
       ...ORB_SIZE,
       frame: false, transparent: true, resizable: false, maximizable: false, minimizable: false, fullscreenable: false,
+      roundedCorners: false, thickFrame: false, backgroundColor: '#00000000',
       skipTaskbar: true, alwaysOnTop: true, hasShadow: false, focusable: true, icon: iconPath,
       webPreferences,
     });

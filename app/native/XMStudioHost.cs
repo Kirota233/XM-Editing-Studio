@@ -4,6 +4,9 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Drawing.Text;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -26,13 +29,51 @@ namespace XMStudioHost
         public const int HTCAPTION = 0x0002;
         public const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        public const int DWMWA_BORDER_COLOR = 34;
         public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+        public const int DWMWA_NCRENDERING_POLICY = 2;
+        public const uint ULW_ALPHA = 0x00000002;
+        public const byte AC_SRC_OVER = 0x00;
+        public const byte AC_SRC_ALPHA = 0x01;
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct POINT { public int X; public int Y; public POINT(int x, int y) { X = x; Y = y; } }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SIZE { public int CX; public int CY; public SIZE(int cx, int cy) { CX = cx; CY = cy; } }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 1)]
+        public struct BLENDFUNCTION
+        {
+            public byte BlendOp;
+            public byte BlendFlags;
+            public byte SourceConstantAlpha;
+            public byte AlphaFormat;
+        }
 
         [DllImport("user32.dll")]
         public static extern bool ReleaseCapture();
 
         [DllImport("user32.dll")]
         public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern bool UpdateLayeredWindow(IntPtr hwnd, IntPtr hdcDst, ref POINT pptDst, ref SIZE psize, IntPtr hdcSrc, ref POINT pptSrc, uint crKey, [In] ref BLENDFUNCTION pblend, uint dwFlags);
+
+        [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern IntPtr GetDC(IntPtr hWnd);
+
+        [DllImport("user32.dll", ExactSpelling = true)]
+        public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+        [DllImport("gdi32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern IntPtr CreateCompatibleDC(IntPtr hDC);
+
+        [DllImport("gdi32.dll", ExactSpelling = true, SetLastError = true)]
+        public static extern bool DeleteDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll", ExactSpelling = true)]
+        public static extern IntPtr SelectObject(IntPtr hDC, IntPtr hObject);
 
         [DllImport("gdi32.dll")]
         public static extern IntPtr CreateRoundRectRgn(int x1, int y1, int x2, int y2, int cx, int cy);
@@ -42,6 +83,22 @@ namespace XMStudioHost
 
         [DllImport("dwmapi.dll")]
         public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+        public static void DisableBorderAndShadow(IntPtr handle)
+        {
+            try
+            {
+                int ncPolicy = 1; // DWMNCRP_DISABLED
+                DwmSetWindowAttribute(handle, DWMWA_NCRENDERING_POLICY, ref ncPolicy, sizeof(int));
+                int corner = 1; // DWMWCP_DONOTROUND
+                DwmSetWindowAttribute(handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+                int borderNone = unchecked((int)0xFFFFFFFE); // DWMWA_COLOR_NONE
+                DwmSetWindowAttribute(handle, DWMWA_BORDER_COLOR, ref borderNone, sizeof(int));
+                int backdropNone = 1; // DWMSBT_NONE
+                DwmSetWindowAttribute(handle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropNone, sizeof(int));
+            }
+            catch { }
+        }
 
         public static void EnableRoundedAndDark(IntPtr handle, bool acrylic = false)
         {
@@ -338,9 +395,299 @@ namespace XMStudioHost
         }
     }
 
+    internal sealed class LayeredPetOrbForm : Form
+    {
+        private readonly Dictionary<string, Image> _gifs = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+        private Image _currentGif;
+        private string _currentKey = "default";
+        private string _bubbleText = "";
+        private DateTime _bubbleUntil = DateTime.MinValue;
+        private DateTime _poseUntil = DateTime.MinValue;
+        private readonly System.Windows.Forms.Timer _animTimer;
+        private readonly System.Windows.Forms.Timer _idleTimer;
+        private readonly Random _rng = new Random();
+        private double _breathePhase;
+        private int _jumpStep = -1;
+        private bool _dragging;
+        private bool _moved;
+        private Point _downScreen;
+        private Point _lastScreen;
+        private DateTime _lastClickTime = DateTime.MinValue;
+        public Action OnTogglePanel;
+        public Action OnMoved;
+
+        public LayeredPetOrbForm(string miaoDir)
+        {
+            Text = "月薪喵";
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            TopMost = true;
+            StartPosition = FormStartPosition.Manual;
+            Size = new Size(220, 236);
+
+            string[] keys = new string[] { "default", "angry", "comfort", "cry", "enjoy", "float", "play" };
+            foreach (string k in keys)
+            {
+                string p = Path.Combine(miaoDir, k + ".gif");
+                if (File.Exists(p))
+                {
+                    try
+                    {
+                        Image img = Image.FromFile(p);
+                        if (ImageAnimator.CanAnimate(img)) ImageAnimator.Animate(img, OnGifFrameChanged);
+                        _gifs[k] = img;
+                    }
+                    catch { }
+                }
+            }
+            if (_gifs.ContainsKey("default")) _currentGif = _gifs["default"];
+
+            _animTimer = new System.Windows.Forms.Timer { Interval = 33 };
+            _animTimer.Tick += (s, e) => TickFrame();
+            _animTimer.Start();
+
+            _idleTimer = new System.Windows.Forms.Timer { Interval = 8500 };
+            _idleTimer.Tick += (s, e) => TickIdleRandom();
+            _idleTimer.Start();
+
+            GreetByTime();
+        }
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ExStyle |= 0x00080000 | 0x00000080; // WS_EX_LAYERED | WS_EX_TOOLWINDOW
+                return cp;
+            }
+        }
+
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            Win32.DisableBorderAndShadow(Handle);
+            RenderLayered();
+        }
+
+        private void OnGifFrameChanged(object sender, EventArgs e) { }
+
+        public void ShowMessage(string text, int durationMs = 2800)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return;
+            _bubbleText = text;
+            _bubbleUntil = DateTime.UtcNow.AddMilliseconds(durationMs);
+        }
+
+        public void SwitchGif(string key, string message, int durationMs = 5200)
+        {
+            if (!_gifs.ContainsKey(key)) key = "default";
+            _currentKey = key;
+            _currentGif = _gifs.ContainsKey(key) ? _gifs[key] : null;
+            if (!string.IsNullOrEmpty(message)) ShowMessage(message, Math.Min(durationMs, 3200));
+            _poseUntil = key == "default" ? DateTime.MaxValue : DateTime.UtcNow.AddMilliseconds(durationMs);
+        }
+
+        private void GreetByTime()
+        {
+            int h = DateTime.Now.Hour;
+            if (h >= 5 && h < 11) SwitchGif("enjoy", "早上好呀！新的一天元气满满~ ☀️", 4500);
+            else if (h >= 11 && h < 14) SwitchGif("comfort", "中午好！记得按时吃饭休息哦~ 🍱", 4500);
+            else if (h >= 14 && h < 19) SwitchGif("play", "下午好！点我可展开剪映插件面板~ ✨", 4500);
+            else if (h >= 19 && h < 23) SwitchGif("comfort", "晚上好！今天剪片辛苦啦~ 🥰", 4500);
+            else SwitchGif("float", "夜深了，早点休息哦~ 💤", 5500);
+        }
+
+        private void TickIdleRandom()
+        {
+            if (!Visible || _currentKey != "default") return;
+            if (_rng.NextDouble() < 0.62)
+            {
+                string[] pool = new string[] { "comfort", "enjoy", "play", "float", "cry" };
+                string pick = pool[_rng.Next(pool.Length)];
+                string msg = "";
+                if (_rng.NextDouble() < 0.55)
+                {
+                    if (pick == "comfort") msg = "好舒服呀~ 蹭蹭~ 🥰";
+                    else if (pick == "enjoy") msg = "今天也要开心导片哦 ✨";
+                    else if (pick == "play") msg = "一起来玩手机呀~ 📱";
+                    else if (pick == "float") msg = "我去休息一下啦~ 💤";
+                    else msg = "拍拍小肚皮~ 陪陪我好不好~";
+                }
+                SwitchGif(pick, msg, 5400);
+            }
+        }
+
+        private void TickFrame()
+        {
+            if (!Visible || IsDisposed || !IsHandleCreated) return;
+            if (_currentKey != "default" && DateTime.UtcNow >= _poseUntil)
+            {
+                _currentKey = "default";
+                if (_gifs.ContainsKey("default")) _currentGif = _gifs["default"];
+            }
+            _breathePhase += 0.14;
+            if (_jumpStep >= 0)
+            {
+                _jumpStep++;
+                if (_jumpStep > 12) _jumpStep = -1;
+            }
+            RenderLayered();
+        }
+
+        private void RenderLayered()
+        {
+            if (IsDisposed || !IsHandleCreated) return;
+            int w = Width, h = Height;
+            using (Bitmap bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.Transparent);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+
+                if (_currentGif != null)
+                {
+                    try { ImageAnimator.UpdateFrames(_currentGif); } catch { }
+                    int baseSize = 172;
+                    int breatheDelta = _currentKey == "default" ? (int)Math.Round(Math.Sin(_breathePhase) * 2.5) : 0;
+                    int drawSize = baseSize + breatheDelta;
+                    int jumpOffset = 0;
+                    if (_jumpStep >= 0 && _jumpStep <= 12)
+                    {
+                        double t = _jumpStep / 12.0;
+                        jumpOffset = -(int)Math.Round(Math.Sin(t * Math.PI) * 28.0);
+                    }
+                    int gx = (w - drawSize) / 2;
+                    int gy = h - drawSize - 4 + jumpOffset;
+                    g.DrawImage(_currentGif, new Rectangle(gx, gy, drawSize, drawSize));
+                }
+
+                if (!string.IsNullOrEmpty(_bubbleText) && DateTime.UtcNow < _bubbleUntil)
+                {
+                    using (Font font = new Font("Microsoft YaHei", 10f, FontStyle.Bold))
+                    {
+                        SizeF textSize = g.MeasureString(_bubbleText, font, w - 28);
+                        int bw = Math.Min(w - 8, (int)Math.Ceiling(textSize.Width) + 24);
+                        int bh = Math.Max(32, (int)Math.Ceiling(textSize.Height) + 14);
+                        int bx = (w - bw) / 2;
+                        int by = 4;
+                        using (GraphicsPath path = CreateRoundRectPath(new Rectangle(bx, by, bw, bh), 14))
+                        using (SolidBrush fill = new SolidBrush(Color.White))
+                        using (Pen border = new Pen(Color.FromArgb(255, 182, 193), 2f))
+                        using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                        {
+                            g.FillPath(fill, path);
+                            g.DrawPath(border, path);
+                            g.DrawString(_bubbleText, font, Brushes.Black, new RectangleF(bx + 8, by + 4, bw - 16, bh - 8), sf);
+                        }
+                    }
+                }
+
+                IntPtr screenDc = Win32.GetDC(IntPtr.Zero);
+                IntPtr memDc = Win32.CreateCompatibleDC(screenDc);
+                IntPtr hBitmap = IntPtr.Zero;
+                IntPtr oldBitmap = IntPtr.Zero;
+                try
+                {
+                    hBitmap = bmp.GetHbitmap(Color.FromArgb(0));
+                    oldBitmap = Win32.SelectObject(memDc, hBitmap);
+                    Win32.POINT topPos = new Win32.POINT(Left, Top);
+                    Win32.SIZE size = new Win32.SIZE(w, h);
+                    Win32.POINT srcPos = new Win32.POINT(0, 0);
+                    Win32.BLENDFUNCTION blend = new Win32.BLENDFUNCTION
+                    {
+                        BlendOp = Win32.AC_SRC_OVER,
+                        BlendFlags = 0,
+                        SourceConstantAlpha = 255,
+                        AlphaFormat = Win32.AC_SRC_ALPHA
+                    };
+                    Win32.UpdateLayeredWindow(Handle, screenDc, ref topPos, ref size, memDc, ref srcPos, 0, ref blend, Win32.ULW_ALPHA);
+                }
+                finally
+                {
+                    if (oldBitmap != IntPtr.Zero) Win32.SelectObject(memDc, oldBitmap);
+                    if (hBitmap != IntPtr.Zero) Win32.DeleteObject(hBitmap);
+                    Win32.DeleteDC(memDc);
+                    Win32.ReleaseDC(IntPtr.Zero, screenDc);
+                }
+            }
+        }
+
+        private static GraphicsPath CreateRoundRectPath(Rectangle r, int radius)
+        {
+            int d = radius * 2;
+            GraphicsPath path = new GraphicsPath();
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button != MouseButtons.Left) return;
+            _dragging = true;
+            _moved = false;
+            _downScreen = _lastScreen = Control.MousePosition;
+            Capture = true;
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            if (!_dragging) return;
+            Point cur = Control.MousePosition;
+            if (Math.Abs(cur.X - _downScreen.X) + Math.Abs(cur.Y - _downScreen.Y) >= 5) _moved = true;
+            if (_moved)
+            {
+                int dx = cur.X - _lastScreen.X;
+                int dy = cur.Y - _lastScreen.Y;
+                _lastScreen = cur;
+                if (dx != 0 || dy != 0)
+                {
+                    Location = new Point(Left + dx, Top + dy);
+                    var area = Screen.FromControl(this).WorkingArea;
+                    if (Left <= area.Left + 4 || Top <= area.Top + 4 || Right >= area.Right - 4 || Bottom >= area.Bottom - 4)
+                    {
+                        SwitchGif("angry", "哎呀！撞疼我了！😣", 3000);
+                    }
+                    if (OnMoved != null) OnMoved();
+                }
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (e.Button != MouseButtons.Left || !_dragging) return;
+            _dragging = false;
+            Capture = false;
+            if (!_moved)
+            {
+                DateTime now = DateTime.UtcNow;
+                if ((now - _lastClickTime).TotalMilliseconds <= 320)
+                {
+                    _lastClickTime = DateTime.MinValue;
+                    _jumpStep = 0;
+                    SwitchGif("enjoy", "双击好开心！✨", 4500);
+                }
+                else
+                {
+                    _lastClickTime = now;
+                    if (OnTogglePanel != null) OnTogglePanel();
+                }
+            }
+        }
+    }
+
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.1";
+        public const string CurrentVersion = "1.6.2";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -353,8 +700,7 @@ namespace XMStudioHost
         private WebView2 _mainWebView;
         private WebView2 _aiWebView;
         private string _activeAiProvider = "deepseek";
-        private Form _orbForm;
-        private WebView2 _orbWebView;
+        private LayeredPetOrbForm _orbForm;
         private Form _panelForm;
         private WebView2 _panelWebView;
         private NotifyIcon _tray;
@@ -1330,20 +1676,21 @@ namespace XMStudioHost
             _mainForm.BeginInvoke(new Action(async () =>
             {
                 var area = Screen.PrimaryScreen.WorkingArea;
-                _orbForm = new Form
+                string miaoDir = Path.Combine(_clientDir, "miao");
+                _orbForm = new LayeredPetOrbForm(miaoDir)
                 {
-                    Text = "月薪喵",
-                    FormBorderStyle = FormBorderStyle.None,
-                    ShowInTaskbar = false,
-                    TopMost = true,
-                    StartPosition = FormStartPosition.Manual,
-                    Bounds = new Rectangle(area.Right - 180, area.Bottom - 210, 156, 184),
-                    BackColor = Color.FromArgb(18, 22, 28),
+                    Bounds = new Rectangle(area.Right - 240, area.Bottom - 260, 220, 236),
                     Icon = LoadAppIcon(),
                 };
-                Win32.EnableRoundedAndDark(_orbForm.Handle, true);
-                _orbWebView = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.Transparent };
-                _orbForm.Controls.Add(_orbWebView);
+                _orbForm.OnTogglePanel = () =>
+                {
+                    var unused = HandleCompanionActionAsync("panel", "toggle");
+                };
+                _orbForm.OnMoved = () =>
+                {
+                    _autoDock = false;
+                    if (_panelOpen) PlaceCompanionPanel();
+                };
 
                 _panelForm = new Form
                 {
@@ -1360,7 +1707,6 @@ namespace XMStudioHost
                 _panelWebView = new WebView2 { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.Transparent };
                 _panelForm.Controls.Add(_panelWebView);
 
-                await InitWebViewAsync(_orbWebView, "orb", string.Format("http://127.0.0.1:{0}/companion-orb.html", AppPort), true);
                 await InitWebViewAsync(_panelWebView, "panel", string.Format("http://127.0.0.1:{0}/companion-panel.html?acrylic=1", AppPort), true);
                 tcs.TrySetResult(true);
             }));
@@ -1510,7 +1856,6 @@ namespace XMStudioHost
                 { "watermark", GetWatermarkSnapshot() },
                 { "periodEnabled", _periodEnabled }
             };
-            SendEventToWebView(_orbWebView, "bos:companion-state", snap);
             SendEventToWebView(_panelWebView, "bos:companion-state", snap);
             return snap;
         }
