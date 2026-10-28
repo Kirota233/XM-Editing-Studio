@@ -33,6 +33,12 @@ export const OPEN_SOURCE_PROJECTS: OpenSourceProject[] = [
     repoUrl: 'https://github.com/Kirota233/JianYing-AI-Pro',
     summary: '剪映智能工作台自动化核心',
   },
+  {
+    id: 'desktop-pet-miao',
+    name: 'DesktopPet-Miao',
+    repoUrl: 'https://github.com/sprmorn/DesktopPet-Miao',
+    summary: '月薪喵桌面宠物随机待机动画与气泡灵感',
+  },
 ];
 
 export function SidebarCredits() {

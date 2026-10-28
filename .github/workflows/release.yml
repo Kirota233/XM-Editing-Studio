@@ -107,6 +107,5 @@ jobs:
           prerelease: false
           overwrite: true
           files: |
-            artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64-Update.exe
             artifacts/release/XM-Editing-Studio-${{ steps.meta.outputs.version }}-Windows-x64-Setup.exe
             artifacts/release/SHA256SUMS.txt

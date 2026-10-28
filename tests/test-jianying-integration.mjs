@@ -96,12 +96,12 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
   assert.equal(drawer.props.hidden, true, 'SidebarCredits project dependencies must be collapsed by default');
   const contributeLink = nodes(credits, n => n.type === 'a' && String(n.props.className || '').includes('bos-credits-contribute'))[0];
   assert.equal(contributeLink.props.href, 'https://github.com/Kirota233/XM-Editing-Studio');
-  assert.equal(ui.OPEN_SOURCE_PROJECTS.length, 3);
-  for (const name of ['watermarker', 'JianYing-Period-Keeper', 'JianYing-AI-Pro']) {
+  assert.equal(ui.OPEN_SOURCE_PROJECTS.length, 4);
+  for (const name of ['watermarker', 'JianYing-Period-Keeper', 'JianYing-AI-Pro', 'DesktopPet-Miao']) {
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.5\.1/);
+  assert.match(textOf(titleBar), /v1\.6\.0/);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {

@@ -213,3 +213,6 @@ The integrated component modifies only matching in-memory punctuation tables, re
 JianYing-AI-Pro integrated engine
 Adapted from user-provided JianYing-AI-Pro 2.1 main.py (SHA256 9a411111454eabd7e2fc84bf53efb636c243b5b14d58524d659dcbf42b453b2f). No LICENSE file was supplied with that project. Local integration is performed at the user's request. Standalone GUI and credential handling have been replaced.
 Python runtime and dependency notices: build/jianying/THIRD_PARTY_NOTICES.txt and build/jianying/licenses/.
+
+DesktopPet-Miao animation inspiration: https://github.com/sprmorn/DesktopPet-Miao
+MIT License. Idle pose switching, speech bubble greetings, and bounce animations adapted for the 月薪喵 companion orb.

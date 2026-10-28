@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { build } from 'esbuild';
 import { companionMarkup } from '../app/electron/companion-dock.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -21,6 +22,14 @@ for (const [exe, manifest] of [
 }
 await fs.rm('app/dist/client/watermarker', { recursive: true, force: true }).catch(() => {});
 await fs.mkdir('app/dist/client/assets', { recursive: true });
+await build({
+  entryPoints: ['app/src/webview2-bridge.ts'],
+  bundle: true,
+  outfile: 'app/dist/client/assets/webview2-bridge.js',
+  format: 'iife',
+  target: 'chrome120',
+  minify: true,
+});
 await fs.writeFile('app/public/companion.html', companionMarkup.companionHtml(), 'utf8');
 await fs.writeFile('app/public/companion-orb.html', companionMarkup.orbHtml(), 'utf8');
 await fs.writeFile('app/public/companion-panel.html', companionMarkup.panelHtml(true), 'utf8');

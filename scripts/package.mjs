@@ -1,82 +1,50 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { packager } from '@electron/packager';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 process.chdir(root);
 
 for (const file of [
   'app/dist/client/index.html',
+  'app/dist/client/assets/webview2-bridge.js',
   '.generated/native/helpers/PeriodKeeper.exe',
   'app/build/jianying/JianYingEngine.exe',
   'app/build/jianying/engine.json',
   'app/build/watermark/WatermarkEngine.exe',
   'app/build/watermark/engine.json',
+  'app/build/host/小马剪辑台.exe',
+  'app/lib/webview2/Microsoft.Web.WebView2.Core.dll',
+  'app/lib/webview2/Microsoft.Web.WebView2.WinForms.dll',
+  'app/lib/webview2/WebView2Loader.dll',
 ]) {
   await fs.access(file);
 }
 
-const stage = path.join(root, '.generated', `package-${Date.now()}`);
-await fs.mkdir(stage, { recursive: true });
+const outDir = path.join(root, 'artifacts', 'XM剪辑台-win32-x64');
+await fs.rm(outDir, { recursive: true, force: true }).catch(() => {});
+await fs.mkdir(path.join(outDir, 'resources', 'client'), { recursive: true });
+await fs.mkdir(path.join(outDir, 'resources', 'helpers'), { recursive: true });
+await fs.mkdir(path.join(outDir, 'resources', 'jianying'), { recursive: true });
+await fs.mkdir(path.join(outDir, 'resources', 'watermark'), { recursive: true });
 
-try {
-  for (const folder of ['electron', 'server', 'shared', 'dist', 'build']) {
-    await fs.cp(path.join('app', folder), path.join(stage, folder), { recursive: true });
-  }
-  // Remove unreferenced 1.9MB decorative PNG from staged bundle
-  await fs.rm(path.join(stage, 'dist', 'client', 'assets', 'provider-portal-scene.png'), { force: true });
-
-  const metadata = JSON.parse(await fs.readFile('app/package.json', 'utf8'));
-  metadata.author ||= '小马';
-  delete metadata.dependencies;
-  await fs.writeFile(path.join(stage, 'package.json'), JSON.stringify(metadata, null, 2));
-  await fs.copyFile('app/THIRD_PARTY_NOTICES.txt', path.join(stage, 'THIRD_PARTY_NOTICES.txt'));
-
-  const result = await packager({
-    dir: stage,
-    out: 'artifacts',
-    name: 'XM剪辑台',
-    executableName: '小马剪辑台',
-    platform: 'win32',
-    arch: 'x64',
-    electronVersion: '44.9.2',
-    icon: 'app/assets/app-icon.ico',
-    appVersion: metadata.version,
-    buildVersion: metadata.version,
-    asar: true,
-    overwrite: true,
-    prune: false,
-    extraResource: ['.generated/native/helpers'],
-  });
-
-  // Prune unused Chromium locales and unused software-rasterizer / compiler DLLs to reduce package size
-  const keepLocales = new Set(['zh-CN.pak', 'en-US.pak']);
-  for (const outDir of result) {
-    const localesDir = path.join(outDir, 'locales');
-    try {
-      const entries = await fs.readdir(localesDir);
-      for (const entry of entries) {
-        if (!keepLocales.has(entry)) {
-          await fs.rm(path.join(localesDir, entry), { force: true });
-        }
-      }
-    } catch { /* ignore */ }
-
-    for (const bloatFile of [
-      'LICENSES.chromium.html',
-      'dxcompiler.dll',
-      'dxil.dll',
-      'vk_swiftshader.dll',
-      'vulkan-1.dll',
-      'vk_swiftshader_icd.json',
-      'd3dcompiler_47.dll',
-    ]) {
-      await fs.rm(path.join(outDir, bloatFile), { force: true }).catch(() => {});
-    }
-  }
-
-  console.log(result.join('\n'));
-} finally {
-  await fs.rm(stage, { recursive: true, force: true }).catch(() => {});
+// 1. Copy Native C# + WebView2 Host (~56 KB) and WebView2 Loader DLLs (~790 KB total, zero bundled Chromium kernel!)
+await fs.copyFile('app/build/host/小马剪辑台.exe', path.join(outDir, '小马剪辑台.exe'));
+for (const dll of ['Microsoft.Web.WebView2.Core.dll', 'Microsoft.Web.WebView2.WinForms.dll', 'WebView2Loader.dll']) {
+  await fs.copyFile(path.join('app/lib/webview2', dll), path.join(outDir, dll));
 }
+await fs.copyFile('app/assets/app-icon.ico', path.join(outDir, 'app-icon.ico'));
+await fs.copyFile('app/THIRD_PARTY_NOTICES.txt', path.join(outDir, 'THIRD_PARTY_NOTICES.txt'));
+
+// 2. Copy frontend client assets (prune unreferenced decorative PNGs)
+await fs.cp('app/dist/client', path.join(outDir, 'resources', 'client'), { recursive: true });
+for (const unusedAsset of ['provider-portal-scene.png', 'signal-ribbon.png']) {
+  await fs.rm(path.join(outDir, 'resources', 'client', 'assets', unusedAsset), { force: true }).catch(() => {});
+}
+
+// 3. Copy native C# engines (PeriodKeeper 15KB, JianYingEngine 48KB, WatermarkEngine 24KB + watermark.png 21KB)
+await fs.copyFile('.generated/native/helpers/PeriodKeeper.exe', path.join(outDir, 'resources', 'helpers', 'PeriodKeeper.exe'));
+await fs.cp('app/build/jianying', path.join(outDir, 'resources', 'jianying'), { recursive: true });
+await fs.cp('app/build/watermark', path.join(outDir, 'resources', 'watermark'), { recursive: true });
+
+console.log(outDir);

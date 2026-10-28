@@ -55,6 +55,29 @@ try {
     $wmHash = (Get-FileHash -LiteralPath $wmExe -Algorithm SHA256).Hash.ToLowerInvariant()
     $wmManifest = "{`n  `"sha256`": `"$wmHash`"`n}`n"
     [IO.File]::WriteAllText((Join-Path $wmOutDir 'engine.json'), $wmManifest, $utf8NoBom)
+    if (Test-Path -LiteralPath (Join-Path $repoRoot 'app/public/watermark.png')) {
+        Copy-Item -LiteralPath (Join-Path $repoRoot 'app/public/watermark.png') -Destination (Join-Path $wmOutDir 'watermark.png') -Force
+    }
 
-    Write-Host "Native helpers built: PeriodKeeper.exe, JianYingEngine.exe ($((Get-Item $engineExe).Length) bytes), WatermarkEngine.exe ($((Get-Item $wmExe).Length) bytes)"
+    # 4. Compile XMStudioHost.exe (Native C# + Windows WebView2 Desktop Host - replaces 180MB Electron Chromium bundle)
+    $hostOutDir = Join-Path $repoRoot 'app/build/host'
+    New-Item -ItemType Directory -Path $hostOutDir -Force | Out-Null
+    $hostExe = Join-Path $hostOutDir '小马剪辑台.exe'
+    $hostSource = Join-Path $repoRoot 'app/native/XMStudioHost.cs'
+    $wvCore = Join-Path $repoRoot 'app/lib/webview2/Microsoft.Web.WebView2.Core.dll'
+    $wvWinForms = Join-Path $repoRoot 'app/lib/webview2/Microsoft.Web.WebView2.WinForms.dll'
+    $appIcon = Join-Path $repoRoot 'app/assets/app-icon.ico'
+    & $compiler /nologo /utf8output /codepage:65001 /target:winexe /platform:x64 /optimize+ `
+        /r:System.Web.Extensions.dll `
+        /r:System.Drawing.dll `
+        /r:System.Windows.Forms.dll `
+        ('/r:' + $wvCore) `
+        ('/r:' + $wvWinForms) `
+        ('/win32icon:' + $appIcon) `
+        ('/out:' + $hostExe) $hostSource
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $hostExe)) {
+        throw 'XMStudioHost C# compilation failed.'
+    }
+
+    Write-Host "Native helpers built: PeriodKeeper.exe, JianYingEngine.exe ($((Get-Item $engineExe).Length) bytes), WatermarkEngine.exe ($((Get-Item $wmExe).Length) bytes), XMStudioHost ($((Get-Item $hostExe).Length) bytes)"
 } finally { Pop-Location }
