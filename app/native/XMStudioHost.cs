@@ -121,6 +121,7 @@ namespace XMStudioHost
     internal sealed class JsonRpcChild : IDisposable
     {
         private readonly string _exePath;
+        private readonly string _arguments;
         private Process _proc;
         private int _seq;
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Dictionary<string, object>>> _pending =
@@ -128,9 +129,10 @@ namespace XMStudioHost
         private readonly JavaScriptSerializer _json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         public Action<Dictionary<string, object>> OnEvent;
 
-        public JsonRpcChild(string exePath)
+        public JsonRpcChild(string exePath, string arguments = "")
         {
             _exePath = exePath;
+            _arguments = arguments ?? "";
         }
 
         private void EnsureStarted()
@@ -139,6 +141,7 @@ namespace XMStudioHost
             var psi = new ProcessStartInfo
             {
                 FileName = _exePath,
+                Arguments = _arguments,
                 WorkingDirectory = Path.GetDirectoryName(_exePath),
                 UseShellExecute = false,
                 RedirectStandardInput = true,
@@ -413,8 +416,15 @@ namespace XMStudioHost
         private Point _downScreen;
         private Point _lastScreen;
         private DateTime _lastClickTime = DateTime.MinValue;
+        private bool _choiceMode;
+        private int _progressPercent = -1;
+        private Rectangle _renameBtnRect = Rectangle.Empty;
+        private Rectangle _watermarkBtnRect = Rectangle.Empty;
+        private Rectangle _cancelBtnRect = Rectangle.Empty;
         public Action OnTogglePanel;
         public Action OnMoved;
+        public Action<string[]> OnPathsDropped;
+        public Action<string> OnDropChoice;
 
         public LayeredPetOrbForm(string miaoDir)
         {
@@ -422,8 +432,9 @@ namespace XMStudioHost
             FormBorderStyle = FormBorderStyle.None;
             ShowInTaskbar = false;
             TopMost = true;
+            AllowDrop = true;
             StartPosition = FormStartPosition.Manual;
-            Size = new Size(220, 236);
+            Size = new Size(230, 256);
 
             string[] keys = new string[] { "default", "angry", "comfort", "cry", "enjoy", "float", "play" };
             foreach (string k in keys)
@@ -475,8 +486,34 @@ namespace XMStudioHost
         public void ShowMessage(string text, int durationMs = 2800)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
+            _choiceMode = false;
+            _progressPercent = -1;
             _bubbleText = text;
             _bubbleUntil = DateTime.UtcNow.AddMilliseconds(durationMs);
+        }
+
+        public void ShowChoicePrompt(int count)
+        {
+            _choiceMode = true;
+            _progressPercent = -1;
+            _bubbleText = string.Format("收到 {0} 个文件，需要做什么呢？", count);
+            _bubbleUntil = DateTime.UtcNow.AddSeconds(30);
+            if (_gifs.ContainsKey("comfort"))
+            {
+                _currentKey = "comfort";
+                _currentGif = _gifs["comfort"];
+                _poseUntil = DateTime.UtcNow.AddSeconds(30);
+            }
+            RenderLayered();
+        }
+
+        public void ShowProgress(string text, int percent)
+        {
+            _choiceMode = false;
+            _progressPercent = Math.Max(1, Math.Min(100, percent));
+            _bubbleText = text;
+            _bubbleUntil = DateTime.UtcNow.AddSeconds(15);
+            RenderLayered();
         }
 
         public void SwitchGif(string key, string message, int durationMs = 5200)
@@ -484,7 +521,7 @@ namespace XMStudioHost
             if (!_gifs.ContainsKey(key)) key = "default";
             _currentKey = key;
             _currentGif = _gifs.ContainsKey(key) ? _gifs[key] : null;
-            if (!string.IsNullOrEmpty(message)) ShowMessage(message, Math.Min(durationMs, 3200));
+            if (!string.IsNullOrEmpty(message)) ShowMessage(message, Math.Min(durationMs, 4200));
             _poseUntil = key == "default" ? DateTime.MaxValue : DateTime.UtcNow.AddMilliseconds(durationMs);
         }
 
@@ -564,13 +601,20 @@ namespace XMStudioHost
                     g.DrawImage(_currentGif, new Rectangle(gx, gy, drawSize, drawSize));
                 }
 
+                _renameBtnRect = Rectangle.Empty;
+                _watermarkBtnRect = Rectangle.Empty;
+                _cancelBtnRect = Rectangle.Empty;
+
                 if (!string.IsNullOrEmpty(_bubbleText) && DateTime.UtcNow < _bubbleUntil)
                 {
-                    using (Font font = new Font("Microsoft YaHei", 10f, FontStyle.Bold))
+                    using (Font font = new Font("Microsoft YaHei", 9.5f, FontStyle.Bold))
+                    using (Font btnFont = new Font("Microsoft YaHei", 8.8f, FontStyle.Bold))
                     {
-                        SizeF textSize = g.MeasureString(_bubbleText, font, w - 28);
-                        int bw = Math.Min(w - 8, (int)Math.Ceiling(textSize.Width) + 24);
-                        int bh = Math.Max(32, (int)Math.Ceiling(textSize.Height) + 14);
+                        SizeF textSize = g.MeasureString(_bubbleText, font, w - 24);
+                        int extraH = _choiceMode ? 28 : (_progressPercent >= 0 ? 14 : 0);
+                        int bw = _choiceMode ? (w - 8) : Math.Min(w - 8, Math.Max(148, (int)Math.Ceiling(textSize.Width) + 24));
+                        int textH = Math.Max(22, (int)Math.Ceiling(textSize.Height));
+                        int bh = textH + 14 + extraH;
                         int bx = (w - bw) / 2;
                         int by = 4;
                         using (GraphicsPath path = CreateRoundRectPath(new Rectangle(bx, by, bw, bh), 14))
@@ -580,7 +624,51 @@ namespace XMStudioHost
                         {
                             g.FillPath(fill, path);
                             g.DrawPath(border, path);
-                            g.DrawString(_bubbleText, font, Brushes.Black, new RectangleF(bx + 8, by + 4, bw - 16, bh - 8), sf);
+                            g.DrawString(_bubbleText, font, Brushes.Black, new RectangleF(bx + 6, by + 5, bw - 12, textH + 2), sf);
+
+                            if (_choiceMode)
+                            {
+                                int btnY = by + textH + 8;
+                                int btnH = 22;
+                                _renameBtnRect = new Rectangle(bx + 10, btnY, 78, btnH);
+                                _watermarkBtnRect = new Rectangle(bx + 94, btnY, 84, btnH);
+                                _cancelBtnRect = new Rectangle(bx + 184, btnY, 26, btnH);
+                                using (SolidBrush btnFill = new SolidBrush(Color.FromArgb(255, 240, 244)))
+                                using (Pen btnPen = new Pen(Color.FromArgb(255, 141, 166), 1.5f))
+                                using (SolidBrush btnText = new SolidBrush(Color.FromArgb(184, 29, 78)))
+                                {
+                                    using (GraphicsPath p1 = CreateRoundRectPath(_renameBtnRect, 10))
+                                    {
+                                        g.FillPath(btnFill, p1);
+                                        g.DrawPath(btnPen, p1);
+                                        g.DrawString("✏️ 改名", btnFont, btnText, _renameBtnRect, sf);
+                                    }
+                                    using (GraphicsPath p2 = CreateRoundRectPath(_watermarkBtnRect, 10))
+                                    {
+                                        g.FillPath(btnFill, p2);
+                                        g.DrawPath(btnPen, p2);
+                                        g.DrawString("💧 加水印", btnFont, btnText, _watermarkBtnRect, sf);
+                                    }
+                                    using (GraphicsPath p3 = CreateRoundRectPath(_cancelBtnRect, 10))
+                                    {
+                                        g.FillPath(Brushes.WhiteSmoke, p3);
+                                        g.DrawPath(Pens.LightGray, p3);
+                                        g.DrawString("✕", btnFont, Brushes.DimGray, _cancelBtnRect, sf);
+                                    }
+                                }
+                            }
+                            else if (_progressPercent >= 0)
+                            {
+                                Rectangle barBg = new Rectangle(bx + 12, by + textH + 9, bw - 24, 7);
+                                int fillW = Math.Max(4, (int)Math.Round((barBg.Width) * (_progressPercent / 100.0)));
+                                Rectangle barFg = new Rectangle(barBg.X, barBg.Y, Math.Min(barBg.Width, fillW), barBg.Height);
+                                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(255, 228, 233)))
+                                using (SolidBrush fgBrush = new SolidBrush(Color.FromArgb(255, 92, 138)))
+                                {
+                                    g.FillRectangle(bgBrush, barBg);
+                                    g.FillRectangle(fgBrush, barFg);
+                                }
+                            }
                         }
                     }
                 }
@@ -627,10 +715,63 @@ namespace XMStudioHost
             return path;
         }
 
+        protected override void OnDragEnter(DragEventArgs drgevent)
+        {
+            base.OnDragEnter(drgevent);
+            if (drgevent.Data != null && drgevent.Data.GetDataPresent(DataFormats.FileDrop))
+                drgevent.Effect = DragDropEffects.Copy;
+            else
+                drgevent.Effect = DragDropEffects.None;
+        }
+
+        protected override void OnDragDrop(DragEventArgs drgevent)
+        {
+            base.OnDragDrop(drgevent);
+            try
+            {
+                if (drgevent.Data != null && drgevent.Data.GetDataPresent(DataFormats.FileDrop))
+                {
+                    string[] files = drgevent.Data.GetData(DataFormats.FileDrop) as string[];
+                    if (files != null && files.Length > 0 && OnPathsDropped != null)
+                    {
+                        OnPathsDropped(files);
+                    }
+                }
+            }
+            catch { }
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Left) return;
+            if (_choiceMode && DateTime.UtcNow < _bubbleUntil)
+            {
+                Point pt = e.Location;
+                if (_renameBtnRect.Contains(pt))
+                {
+                    _choiceMode = false;
+                    _bubbleUntil = DateTime.MinValue;
+                    RenderLayered();
+                    if (OnDropChoice != null) OnDropChoice("rename");
+                    return;
+                }
+                if (_watermarkBtnRect.Contains(pt))
+                {
+                    _choiceMode = false;
+                    ShowProgress("正在同目录加水印 1%…", 2);
+                    if (OnDropChoice != null) OnDropChoice("watermark");
+                    return;
+                }
+                if (_cancelBtnRect.Contains(pt))
+                {
+                    _choiceMode = false;
+                    _bubbleUntil = DateTime.MinValue;
+                    RenderLayered();
+                    if (OnDropChoice != null) OnDropChoice("cancel");
+                    return;
+                }
+            }
             _dragging = true;
             _moved = false;
             _downScreen = _lastScreen = Control.MousePosition;
@@ -1249,7 +1390,7 @@ namespace XMStudioHost
 
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.3";
+        public const string CurrentVersion = "1.6.4";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -1271,6 +1412,10 @@ namespace XMStudioHost
         private bool _companionVisible = false;
         private bool _panelOpen = false;
         private bool _autoDock = true;
+        private string _activeCompanionStage = "export";
+        private readonly List<string> _pendingDropFiles = new List<string>();
+        private string _orbNotice = "";
+        private string _orbNoticeToken = "";
 
         private JsonRpcChild _jianyingRpc;
         private JsonRpcChild _watermarkRpc;
@@ -1355,11 +1500,19 @@ namespace XMStudioHost
             );
             if (!string.IsNullOrEmpty(jyExe))
             {
-                _jianyingRpc = new JsonRpcChild(jyExe);
+                string jyDataDir = Path.Combine(_userDataDir, "jianying-ai");
+                Directory.CreateDirectory(jyDataDir);
+                _jianyingRpc = new JsonRpcChild(jyExe, "--data-dir \"" + jyDataDir + "\"");
                 _jianyingRpc.OnEvent = ev =>
                 {
                     string evName = ev.ContainsKey("event") ? Convert.ToString(ev["event"]) : "";
-                    if (evName == "ai_request")
+                    if (evName == "state" && ev.ContainsKey("state") && ev["state"] is Dictionary<string, object>)
+                    {
+                        _lastJianyingState = (Dictionary<string, object>)ev["state"];
+                        SendEventToMain("bos:jianying-state", _lastJianyingState);
+                        BroadcastCompanionState();
+                    }
+                    else if (evName == "ai" || evName == "ai_request")
                     {
                         SendEventToMain("bos:jianying-ai-request", ev);
                     }
@@ -1468,7 +1621,13 @@ namespace XMStudioHost
                     await Task.Delay(1200);
                     if (_jianyingRpc != null)
                     {
-                        try { _lastJianyingState = await _jianyingRpc.CallAsync(new Dictionary<string, object> { { "action", "status" } }); } catch { }
+                        try
+                        {
+                            var initRes = await _jianyingRpc.CallAsync(new Dictionary<string, object> { { "action", "status" }, { "args", new Dictionary<string, object>() } });
+                            if (initRes != null && initRes.ContainsKey("state") && initRes["state"] is Dictionary<string, object>)
+                                _lastJianyingState = (Dictionary<string, object>)initRes["state"];
+                        }
+                        catch { }
                     }
                     await CheckUpdaterAsync();
                 });
@@ -1874,19 +2033,30 @@ namespace XMStudioHost
         {
             var snap = GetWatermarkSnapshot();
             SendEventToMain("bos:watermark-state", snap);
+            if (_wmRunning && _orbForm != null && !_orbForm.IsDisposed)
+            {
+                int pct = Convert.ToInt32(snap["overallProgress"]);
+                int done = Convert.ToInt32(snap["completedCount"]);
+                int total = Convert.ToInt32(snap["totalCount"]);
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    if (_orbForm != null && !_orbForm.IsDisposed)
+                        _orbForm.ShowProgress(string.Format("正在加水印 {0}% ({1}/{2})…", pct, done, total), Math.Max(2, pct));
+                }));
+            }
             BroadcastCompanionState();
         }
 
-        private string ResolveWmOutputPath(string inputPath)
+        private string ResolveWmOutputPath(string inputPath, bool sameDirectory = false)
         {
-            string dir = Convert.ToString(_wmSettings["outputDir"]).Trim();
+            string dir = sameDirectory ? "" : Convert.ToString(_wmSettings["outputDir"]).Trim();
             if (string.IsNullOrEmpty(dir)) dir = Path.GetDirectoryName(inputPath);
             string suffix = Convert.ToString(_wmSettings["suffix"]).Trim();
             if (string.IsNullOrEmpty(suffix)) suffix = "样片";
             return Path.Combine(dir, Path.GetFileNameWithoutExtension(inputPath) + suffix + ".mp4");
         }
 
-        private void AddWatermarkVideos(IEnumerable<string> paths)
+        private void AddWatermarkVideos(IEnumerable<string> paths, bool sameDirectory = false)
         {
             foreach (string raw in paths)
             {
@@ -1910,7 +2080,8 @@ namespace XMStudioHost
                     { "inputPath", full },
                     { "fileName", fi.Name },
                     { "sizeBytes", fi.Length },
-                    { "outputPath", ResolveWmOutputPath(full) },
+                    { "sameDirectory", sameDirectory },
+                    { "outputPath", ResolveWmOutputPath(full, sameDirectory) },
                     { "status", "pending" },
                     { "progress", 0 },
                     { "elapsedMs", 0 },
@@ -2014,7 +2185,7 @@ namespace XMStudioHost
             BroadcastWatermarkState();
         }
 
-        private void StartWatermarkBatch()
+        private void StartWatermarkBatch(bool forceSameDir = false)
         {
             if (_wmRunning || _watermarkRpc == null) return;
             _wmRunning = true;
@@ -2023,6 +2194,7 @@ namespace XMStudioHost
 
             Task.Run(async () =>
             {
+                int doneCount = 0;
                 try
                 {
                     foreach (var job in _wmJobs.ToArray())
@@ -2035,10 +2207,12 @@ namespace XMStudioHost
                         string st = Convert.ToString(job["status"]);
                         if (st != "pending" && st != "error" && st != "cancelled") continue;
 
+                        bool sameDir = forceSameDir || (job.ContainsKey("sameDirectory") && Convert.ToBoolean(job["sameDirectory"]));
+                        job["sameDirectory"] = sameDir;
                         job["status"] = "processing";
                         job["progress"] = 1;
                         job["error"] = "";
-                        job["outputPath"] = ResolveWmOutputPath(Convert.ToString(job["inputPath"]));
+                        job["outputPath"] = ResolveWmOutputPath(Convert.ToString(job["inputPath"]), sameDir);
                         BroadcastWatermarkState();
 
                         try
@@ -2062,6 +2236,7 @@ namespace XMStudioHost
                             job["status"] = "done";
                             job["progress"] = 100;
                             job["elapsedMs"] = res.ContainsKey("elapsedMs") ? res["elapsedMs"] : 0;
+                            doneCount++;
                         }
                         catch (Exception ex)
                         {
@@ -2073,7 +2248,12 @@ namespace XMStudioHost
                 }
                 finally
                 {
+                    bool wasCancel = _wmCancel;
                     _wmRunning = false;
+                    if (!wasCancel && doneCount > 0)
+                    {
+                        NotifyOrbMessage(string.Format("✅ 样片加水印全部完成 ({0} 个)！已输出至原目录 ✨", doneCount));
+                    }
                     BroadcastWatermarkState();
                 }
             });
@@ -2097,11 +2277,23 @@ namespace XMStudioHost
             var args = payload.ContainsKey("args") && payload["args"] is Dictionary<string, object>
                 ? new Dictionary<string, object>((Dictionary<string, object>)payload["args"])
                 : new Dictionary<string, object>();
-            args["action"] = action;
-            var res = await _jianyingRpc.CallAsync(args);
-            _lastJianyingState = res;
+            var req = new Dictionary<string, object>
+            {
+                { "action", action },
+                { "args", args }
+            };
+            var res = await _jianyingRpc.CallAsync(req);
+            if (res != null && res.ContainsKey("state") && res["state"] is Dictionary<string, object>)
+            {
+                _lastJianyingState = (Dictionary<string, object>)res["state"];
+            }
+            else if (res != null)
+            {
+                _lastJianyingState = res;
+            }
+            SendEventToMain("bos:jianying-state", _lastJianyingState);
             BroadcastCompanionState();
-            return res;
+            return _lastJianyingState;
         }
 
         private string[] ChooseJianyingFiles()
@@ -2231,7 +2423,68 @@ namespace XMStudioHost
             });
         }
 
-        // ======================== Companion Dock 「月薪喵」 ========================
+        // ======================== Companion Dock 「悬浮窗 · 月薪喵」 ========================
+        private static readonly HashSet<string> SupportedDropExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm", ".mp3", ".wav", ".srt", ".ass"
+        };
+        private static readonly HashSet<string> VideoOnlyExts = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".mp4", ".mov", ".mkv", ".avi", ".m4v", ".webm"
+        };
+
+        private static List<string> ExpandDroppedPaths(IEnumerable<string> rawPaths)
+        {
+            var result = new List<string>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (rawPaths == null) return result;
+            foreach (string raw in rawPaths)
+            {
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                try
+                {
+                    string full = Path.GetFullPath(raw.Trim());
+                    if (Directory.Exists(full))
+                    {
+                        foreach (string f in Directory.EnumerateFiles(full, "*.*", SearchOption.AllDirectories))
+                        {
+                            string ext = Path.GetExtension(f);
+                            if (SupportedDropExts.Contains(ext) && !f.EndsWith("样片.mp4", StringComparison.OrdinalIgnoreCase) && seen.Add(f))
+                            {
+                                result.Add(f);
+                            }
+                        }
+                    }
+                    else if (File.Exists(full))
+                    {
+                        string ext = Path.GetExtension(full);
+                        if (SupportedDropExts.Contains(ext) && !full.EndsWith("样片.mp4", StringComparison.OrdinalIgnoreCase) && seen.Add(full))
+                        {
+                            result.Add(full);
+                        }
+                    }
+                }
+                catch { }
+            }
+            return result;
+        }
+
+        private void NotifyOrbMessage(string msg)
+        {
+            _orbNotice = msg ?? "";
+            _orbNoticeToken = DateTime.UtcNow.Ticks.ToString();
+            if (_mainForm != null && !_mainForm.IsDisposed)
+            {
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    if (_orbForm != null && !_orbForm.IsDisposed)
+                    {
+                        _orbForm.SwitchGif("enjoy", _orbNotice, 5200);
+                    }
+                }));
+            }
+        }
+
         private async Task EnsureCompanionFormsAsync()
         {
             if (_orbForm != null && !_orbForm.IsDisposed) return;
@@ -2242,7 +2495,7 @@ namespace XMStudioHost
                 string miaoDir = Path.Combine(_clientDir, "miao");
                 _orbForm = new LayeredPetOrbForm(miaoDir)
                 {
-                    Bounds = new Rectangle(area.Right - 240, area.Bottom - 260, 220, 236),
+                    Bounds = new Rectangle(area.Right - 254, area.Bottom - 280, 230, 256),
                     Icon = LoadAppIcon(),
                 };
                 _orbForm.OnTogglePanel = () =>
@@ -2254,16 +2507,24 @@ namespace XMStudioHost
                     _autoDock = false;
                     if (_panelOpen) PlaceCompanionPanel();
                 };
+                _orbForm.OnPathsDropped = files =>
+                {
+                    var unused = HandleCompanionActionAsync("drop-paths", files);
+                };
+                _orbForm.OnDropChoice = choice =>
+                {
+                    var unused = HandleCompanionActionAsync("drop-choice", choice);
+                };
 
                 _panelForm = new Form
                 {
-                    Text = "月薪喵 · 剪映插件",
+                    Text = "悬浮窗 · 剪映自动化",
                     FormBorderStyle = FormBorderStyle.None,
                     ShowInTaskbar = false,
                     TopMost = true,
                     StartPosition = FormStartPosition.Manual,
-                    Size = new Size(360, 584),
-                    BackColor = Color.FromArgb(18, 22, 28),
+                    Size = new Size(430, 650),
+                    BackColor = Color.FromArgb(16, 20, 26),
                     Icon = LoadAppIcon(),
                 };
                 Win32.EnableRoundedAndDark(_panelForm.Handle, true);
@@ -2330,6 +2591,81 @@ namespace XMStudioHost
                 if (!_companionVisible || !_panelOpen) return await ShowCompanionAsync(true);
                 return HideCompanion();
             }
+            if (action == "panel-drag")
+            {
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    if (_panelForm != null && !_panelForm.IsDisposed)
+                    {
+                        Win32.ReleaseCapture();
+                        Win32.SendMessage(_panelForm.Handle, Win32.WM_NCLBUTTONDOWN, (IntPtr)Win32.HTCAPTION, IntPtr.Zero);
+                    }
+                }));
+                return BroadcastCompanionState();
+            }
+            if (action == "set-stage")
+            {
+                _activeCompanionStage = Convert.ToString(value ?? "export");
+                return BroadcastCompanionState();
+            }
+            if (action == "prompt-drop")
+            {
+                _activeCompanionStage = Convert.ToString(value ?? _activeCompanionStage);
+                NotifyOrbMessage("请把需要改名或加水印的文件/文件夹，直接拖放到我身上吧~ 🐾");
+                return BroadcastCompanionState();
+            }
+            if (action == "drop-paths")
+            {
+                var rawList = new List<string>();
+                if (value is string[]) rawList.AddRange((string[])value);
+                else if (value is ArrayList)
+                {
+                    foreach (var item in (ArrayList)value) rawList.Add(Convert.ToString(item));
+                }
+                var expanded = ExpandDroppedPaths(rawList);
+                if (expanded.Count == 0) throw new Exception("未在拖放内容中找到支持的视频或字幕文件。");
+                _pendingDropFiles.Clear();
+                _pendingDropFiles.AddRange(expanded);
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    if (_orbForm != null && !_orbForm.IsDisposed)
+                        _orbForm.ShowChoicePrompt(_pendingDropFiles.Count);
+                }));
+                var st = BroadcastCompanionState();
+                st["droppedFilesCount"] = _pendingDropFiles.Count;
+                return st;
+            }
+            if (action == "drop-choice")
+            {
+                string choice = Convert.ToString(value ?? "");
+                var files = _pendingDropFiles.ToArray();
+                _pendingDropFiles.Clear();
+                if (choice == "cancel" || files.Length == 0) return BroadcastCompanionState();
+                if (choice == "rename")
+                {
+                    _activeCompanionStage = "rename";
+                    await HandleJianyingActionAsync(new Dictionary<string, object>
+                    {
+                        { "action", "files" },
+                        { "args", new Dictionary<string, object> { { "files", files } } }
+                    });
+                    return await ShowCompanionAsync(true);
+                }
+                if (choice == "watermark")
+                {
+                    var videos = new List<string>();
+                    foreach (string f in files)
+                    {
+                        if (VideoOnlyExts.Contains(Path.GetExtension(f))) videos.Add(f);
+                    }
+                    if (videos.Count == 0) throw new Exception("拖入的文件中没有可加水印的视频文件。");
+                    _activeCompanionStage = "watermark";
+                    AddWatermarkVideos(videos, true);
+                    StartWatermarkBatch(true);
+                    return BroadcastCompanionState();
+                }
+                return BroadcastCompanionState();
+            }
             if (action == "panel" || action == "expand")
             {
                 await EnsureCompanionFormsAsync();
@@ -2373,13 +2709,104 @@ namespace XMStudioHost
                 return BroadcastCompanionState();
             }
             if (action == "wm-add") { ChooseWatermarkVideos(); return BroadcastCompanionState(); }
-            if (action == "wm-start") { StartWatermarkBatch(); return BroadcastCompanionState(); }
+            if (action == "wm-start") { StartWatermarkBatch(true); return BroadcastCompanionState(); }
             if (action == "wm-cancel") { await CancelWatermarkBatchAsync(); return BroadcastCompanionState(); }
             if (action == "wm-open") { OpenExplorerPath(Convert.ToString(value)); return BroadcastCompanionState(); }
+            if (action == "jy-wizard") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "wizard" } }); return BroadcastCompanionState(); }
             if (action == "jy-scan") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "scan" } }); return BroadcastCompanionState(); }
-            if (action == "jy-export") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "export" } }); return BroadcastCompanionState(); }
+            if (action == "jy-export")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "export" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-settings")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "settings" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-select-tpl")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "select-template" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-paths")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "paths" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-pick-path")
+            {
+                string key = Convert.ToString(value) == "subtitleOutput" ? "subtitleOutput" : "draftDir";
+                string dir = ChooseFolderDialog(key == "draftDir" ? "选择剪映草稿根目录 (JianyingPro Drafts)" : "选择 SRT 字幕导出目录");
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    await HandleJianyingActionAsync(new Dictionary<string, object>
+                    {
+                        { "action", "paths" },
+                        { "args", new Dictionary<string, object> { { key, dir } } }
+                    });
+                }
+                return BroadcastCompanionState();
+            }
             if (action == "jy-extract") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "extract" } }); return BroadcastCompanionState(); }
+            if (action == "jy-fonts") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "fonts" } }); return BroadcastCompanionState(); }
+            if (action == "jy-unhide") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "unhide" } }); return BroadcastCompanionState(); }
+            if (action == "jy-pick-rename-dir")
+            {
+                string dir = ChooseFolderDialog("选择要批量改名的文件夹（含子文件夹）");
+                if (!string.IsNullOrEmpty(dir))
+                {
+                    var expanded = ExpandDroppedPaths(new string[] { dir });
+                    if (expanded.Count > 0)
+                    {
+                        await HandleJianyingActionAsync(new Dictionary<string, object>
+                        {
+                            { "action", "files" },
+                            { "args", new Dictionary<string, object> { { "files", expanded.ToArray() } } }
+                        });
+                    }
+                    var st = BroadcastCompanionState();
+                    st["renameFolder"] = dir;
+                    return st;
+                }
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-pick-rename-files")
+            {
+                string[] files = ChooseJianyingFiles();
+                if (files != null && files.Length > 0)
+                {
+                    await HandleJianyingActionAsync(new Dictionary<string, object>
+                    {
+                        { "action", "files" },
+                        { "args", new Dictionary<string, object> { { "files", files } } }
+                    });
+                }
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-preview-rename")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "preview" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-execute-rename")
+            {
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "rename" } });
+                NotifyOrbMessage("✅ 批量改名已完成！✨");
+                return BroadcastCompanionState();
+            }
             if (action == "jy-stop") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "stop" } }); return BroadcastCompanionState(); }
+            if (action == "jy-modal")
+            {
+                var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "modal" }, { "args", args } });
+                return BroadcastCompanionState();
+            }
             if (action == "launch-jy") { LaunchJianyingExecutable(); return BroadcastCompanionState(); }
             if (action == "navigate")
             {
@@ -2398,26 +2825,59 @@ namespace XMStudioHost
 
         private Dictionary<string, object> BroadcastCompanionState()
         {
-            var jw = _lastJianyingState != null && _lastJianyingState.ContainsKey("jianyingWindow")
-                ? _lastJianyingState["jianyingWindow"] as Dictionary<string, object>
-                : null;
+            var jy = _lastJianyingState ?? new Dictionary<string, object>();
+            var jw = jy.ContainsKey("jianyingWindow") ? jy["jianyingWindow"] as Dictionary<string, object> : null;
             bool jyFound = jw != null && jw.ContainsKey("found") && Convert.ToBoolean(jw["found"]);
+            object queueObj = jy.ContainsKey("queue") ? jy["queue"] : new object[0];
+            int queueCount = 0;
+            if (queueObj is ICollection) queueCount = ((ICollection)queueObj).Count;
+            object logsObj = jy.ContainsKey("logs") ? jy["logs"] : new object[0];
+            string lastLog = "等待指令…";
+            if (logsObj is ArrayList && ((ArrayList)logsObj).Count > 0)
+            {
+                var arr = (ArrayList)logsObj;
+                lastLog = Convert.ToString(arr[arr.Count - 1]);
+            }
+            else if (logsObj is object[] && ((object[])logsObj).Length > 0)
+            {
+                var arr = (object[])logsObj;
+                lastLog = Convert.ToString(arr[arr.Length - 1]);
+            }
+
             var snap = new Dictionary<string, object>
             {
                 { "visible", _companionVisible },
                 { "panelOpen", _panelOpen },
                 { "autoDock", _autoDock },
                 { "acrylic", true },
+                { "activeStage", _activeCompanionStage },
+                { "pendingDropCount", _pendingDropFiles.Count },
+                { "orbNotice", _orbNotice },
+                { "orbNoticeToken", _orbNoticeToken },
                 { "jianyingFound", jyFound },
                 { "jianyingWindow", jw ?? new Dictionary<string, object>() },
                 { "jianying", new Dictionary<string, object>
                     {
-                        { "ready", _lastJianyingState != null && _lastJianyingState.ContainsKey("ready") && Convert.ToBoolean(_lastJianyingState["ready"]) },
-                        { "busy", _lastJianyingState != null && _lastJianyingState.ContainsKey("busy") && Convert.ToBoolean(_lastJianyingState["busy"]) },
-                        { "exporting", _lastJianyingState != null && _lastJianyingState.ContainsKey("exporting") && Convert.ToBoolean(_lastJianyingState["exporting"]) },
-                        { "status", _lastJianyingState != null && _lastJianyingState.ContainsKey("status") ? _lastJianyingState["status"] : "就绪" },
-                        { "queueCount", 0 },
-                        { "lastLog", "等待指令…" }
+                        { "ready", jy.ContainsKey("ready") && Convert.ToBoolean(jy["ready"]) },
+                        { "busy", jy.ContainsKey("busy") && Convert.ToBoolean(jy["busy"]) },
+                        { "exporting", jy.ContainsKey("exporting") && Convert.ToBoolean(jy["exporting"]) },
+                        { "recording", jy.ContainsKey("recording") && Convert.ToBoolean(jy["recording"]) },
+                        { "status", jy.ContainsKey("status") ? jy["status"] : "就绪" },
+                        { "guide", jy.ContainsKey("guide") ? jy["guide"] : "" },
+                        { "modal", jy.ContainsKey("modal") ? jy["modal"] : null },
+                        { "queue", queueObj },
+                        { "queueCount", queueCount },
+                        { "plan", jy.ContainsKey("plan") ? jy["plan"] : new object[0] },
+                        { "fileCount", jy.ContainsKey("fileCount") ? jy["fileCount"] : 0 },
+                        { "mode", jy.ContainsKey("mode") ? jy["mode"] : "return_home" },
+                        { "waits", jy.ContainsKey("waits") ? jy["waits"] : new Dictionary<string, object>() },
+                        { "templates", jy.ContainsKey("templates") ? jy["templates"] : new object[0] },
+                        { "templateId", jy.ContainsKey("templateId") ? jy["templateId"] : "" },
+                        { "resolution", jy.ContainsKey("resolution") ? jy["resolution"] : new int[] { 1920, 1080 } },
+                        { "draftDir", jy.ContainsKey("draftDir") ? jy["draftDir"] : "" },
+                        { "subtitleOutput", jy.ContainsKey("subtitleOutput") ? jy["subtitleOutput"] : "" },
+                        { "logs", logsObj },
+                        { "lastLog", lastLog }
                     }
                 },
                 { "watermark", GetWatermarkSnapshot() },

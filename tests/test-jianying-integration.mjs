@@ -9,6 +9,7 @@ import { createJianyingHost } from '../app/electron/jianying-host.mjs';
 import { createAutoUpdater, compareSemver } from '../app/electron/auto-updater.mjs';
 import { createQuickLaunch } from '../app/electron/quick-launch.mjs';
 import { splitScript } from '../app/shared/script-score.mjs';
+import { splitDramaEpisodes } from '../app/shared/drama-episodes.mjs';
 
 const connection = { provider: { protocol: 'gemini', baseUrl: 'https://example.com/v1beta', apiKey: 'secret-fixture' }, model: 'gemini-test' };
 test('existing Gemini/relay connections carry images correctly and keys never go in request bodies', async () => {
@@ -101,7 +102,11 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.6\.3/);
+  assert.match(textOf(titleBar), /v1\.6\.4/);
+  assert.match(textOf(titleBar), /悬浮窗/);
+  const jyTree = ui.JianyingStudio({ active: true, providers: [], onNavigate: () => {} });
+  assert.match(textOf(jyTree), /剪映自动化功能请使用桌面「悬浮窗」/);
+  assert.match(textOf(jyTree), /开启悬浮窗/);
   const { companionMarkup } = await import('../app/electron/companion-dock.mjs');
   const orbMarkup = companionMarkup.orbHtml();
   for (const gif of ['default.gif', 'angry.gif', 'comfort.gif', 'enjoy.gif', 'cry.gif', 'play.gif', 'float.gif']) {
@@ -109,6 +114,27 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
   }
   assert.doesNotMatch(orbMarkup, /class="tag"/);
   assert.doesNotMatch(orbMarkup, /backdrop-filter/);
+  assert.match(orbMarkup, /id="chooseRename"/);
+  assert.match(orbMarkup, /id="chooseWatermark"/);
+  assert.match(orbMarkup, /id="wmProgFill"/);
+  const panelMarkup = companionMarkup.panelHtml(true);
+  assert.match(panelMarkup, /data-stage="export"[\s\S]*批量导出/);
+  assert.match(panelMarkup, /data-stage="subtitles"[\s\S]*字幕工程/);
+  assert.match(panelMarkup, /data-stage="rename"[\s\S]*批量改名/);
+  assert.match(panelMarkup, /data-stage="watermark"[\s\S]*样片水印/);
+  assert.match(panelMarkup, /id="jyWizard"/);
+  assert.match(panelMarkup, /id="jyScan"/);
+  assert.match(panelMarkup, /xm\.jianying\.draftDir/);
+
+  const episodes = splitDramaEpisodes(
+    '《霸总归来》完整剧本\n第1集 初遇\n[EN] A: Who are you?\n[EN] B: Leave me alone.\n\n第2集 反击\n[EN] A: You will regret this.\n[EN] B: Never!\n\n第3集 真相\n[EN] A: So it was you all along.'
+  );
+  assert.equal(episodes.length, 3);
+  assert.equal(episodes[0].episodeLabel, '第1集');
+  assert.equal(episodes[1].episodeLabel, '第2集');
+  assert.equal(episodes[2].episodeLabel, '第3集');
+  assert.match(episodes[0].script, /Who are you\?/);
+  assert.match(episodes[2].script, /So it was you all along\./);
 });
 
 test('C# JianYingEngine native binary responds to status, settings, regex preview and rename over JSON-RPC', async () => {

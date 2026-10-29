@@ -75,10 +75,27 @@ if (wv && !window.blackObsidian) {
 
   // Jianying AI Vision bridge when JianYingEngine.exe requests draft scan / AI rename
   let lastJyConnection: any = null;
+  function resolveJyConnection() {
+    if (lastJyConnection?.provider?.apiKey) return lastJyConnection;
+    try {
+      const cached = JSON.parse(localStorage.getItem('xm.providers.cache') || '[]');
+      const savedKey = localStorage.getItem('xm.jianying.model') || '';
+      const models: any[] = [];
+      for (const p of cached) {
+        for (const m of p?.models || []) {
+          if (isGeminiModel(p, m)) models.push({ key: `${p.id}::${m}`, provider: p, model: m });
+        }
+      }
+      return models.find(item => item.key === savedKey) || models[0] || null;
+    } catch {
+      return lastJyConnection;
+    }
+  }
   async function handleJianyingAiFromHost(req: any) {
     try {
-      if (!lastJyConnection) throw new Error('请先选择 Gemini 模型连接');
-      const built = buildJianyingAIRequest(lastJyConnection, { prompt: req.prompt, image: req.image });
+      const conn = resolveJyConnection();
+      if (!conn) throw new Error('请先在主窗口「接口与主题」中配置 Gemini 模型连接');
+      const built = buildJianyingAIRequest(conn, { prompt: req.prompt, image: req.image });
       const resp = await hostFetch(built.url.toString(), {
         method: 'POST',
         headers: built.headers,
@@ -88,12 +105,12 @@ if (wv && !window.blackObsidian) {
       if (!resp.ok) throw new Error(`AI 请求失败 (HTTP ${resp.status})`);
       const parsed = JSON.parse(raw);
       const text =
-        lastJyConnection.provider?.protocol === 'gemini'
+        conn.provider?.protocol === 'gemini'
           ? (parsed?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('')
           : parsed?.choices?.[0]?.message?.content || '';
-      await invokeHost('jianying-ai-reply', { id: req.id, text: String(text || '[]') });
+      await invokeHost('jianying-ai-reply', { id: req.id, token: req.token, text: String(text || '[]') });
     } catch (err: any) {
-      await invokeHost('jianying-ai-reply', { id: req.id, error: err?.message || 'AI 识别失败' });
+      await invokeHost('jianying-ai-reply', { id: req.id, token: req.token, error: err?.message || 'AI 识别失败' });
     }
   }
 
@@ -355,8 +372,9 @@ if (wv && !window.blackObsidian) {
     windowControl: (action: string) => invokeHost('window-control', { action }),
   };
 
-  // Mount native window control buttons (Min / Max / Close) and titlebar drag handler in WebView2 mode
+  // Mount native window control buttons (Min / Max / Close) and titlebar drag handler ONLY on main window (never on floating companion windows)
   window.addEventListener('DOMContentLoaded', () => {
+    if (window.location.pathname.includes('companion')) return;
     const bar = document.createElement('div');
     bar.className = 'bos-wv2-window-controls';
     bar.style.cssText = 'position:fixed;top:0;right:0;height:36px;width:138px;z-index:9999;display:grid;grid-template-columns:repeat(3,46px);-webkit-app-region:no-drag;user-select:none;';

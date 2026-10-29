@@ -9,8 +9,8 @@ const { BrowserWindow, screen } = electron || {};
  * - Panel window: separate always-on-top frosted-glass (Windows 11 acrylic) control panel that
  *   operates Jianying automation / watermark / punctuation guard in place, like a Jianying plugin.
  */
-const ORB_SIZE = { width: 200, height: 230 };
-const PANEL_SIZE = { width: 360, height: 584 };
+const ORB_SIZE = { width: 230, height: 256 };
+const PANEL_SIZE = { width: 430, height: 650 };
 
 export function supportsAcrylic(release = os.release()) {
   const build = Number(String(release).split('.')[2] || 0);
@@ -21,20 +21,29 @@ const SHARED_STYLE = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: transparent !important; border: none !important; box-shadow: none !important;
     font-family: "Microsoft YaHei", "Segoe UI Variable Text", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
-  button { font: inherit; cursor: pointer; }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
 `;
 
 function orbHtml() {
   return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵</title><style>${SHARED_STYLE}
-  .stage { position: relative; width: 200px; height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  .stage { position: relative; width: 230px; height: 256px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
     padding-bottom: 4px; cursor: pointer; background: transparent !important; border: none !important; box-shadow: none !important; -webkit-app-region: no-drag; }
   /* SpeechBubble 1:1 from sprmorn/DesktopPet-Miao (white rounded rect + 2px #FFB6C1 pink border, zero frosted border on window) */
   .bubble { position: absolute; top: 4px; left: 50%; transform: translateX(-50%) translateY(6px) scale(.92);
-    max-width: 192px; width: max-content; padding: 7px 14px; border-radius: 15px;
+    max-width: 222px; min-width: 148px; width: max-content; padding: 8px 13px; border-radius: 15px;
     background: #ffffff; border: 2px solid #FFB6C1; color: #000000;
-    font-size: 13px; font-weight: 700; line-height: 1.35; text-align: center; white-space: normal; word-break: break-word;
+    font-size: 12.5px; font-weight: 700; line-height: 1.38; text-align: center; white-space: normal; word-break: break-word;
     opacity: 0; transition: opacity .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1); pointer-events: none; z-index: 10; }
   .bubble.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  .bubble.interactive { pointer-events: auto; cursor: default; }
+  .choice-btns { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; }
+  .choice-btn { padding: 4px 10px; border-radius: 999px; border: 1.5px solid #ff8da6; background: #fff0f4; color: #b81d4e;
+    font-size: 11.5px; font-weight: 700; transition: all .15s; }
+  .choice-btn:hover { background: #ffb6c1; color: #000; transform: translateY(-1px); }
+  .choice-btn.cancel { padding: 4px 7px; border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
+  .wm-prog { margin-top: 6px; height: 7px; width: 100%; border-radius: 999px; background: #ffe4e9; overflow: hidden; }
+  .wm-prog > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #ff7aa2, #ff4d79); border-radius: 999px; transition: width .22s ease; }
   .pet-wrap { position: relative; width: 176px; height: 176px; display: flex; align-items: center; justify-content: center;
     background: transparent !important; border: none !important; box-shadow: none !important; }
   .pet-gif { width: 172px; height: 172px; object-fit: contain; background: transparent !important; border: none !important;
@@ -44,7 +53,15 @@ function orbHtml() {
   @keyframes jumpJoy { 0% { transform: translateY(0) } 50% { transform: translateY(-28px) } 100% { transform: translateY(0) } }
   </style></head><body>
   <div class="stage" id="stage" data-pose="default">
-    <div class="bubble" id="bubble"></div>
+    <div class="bubble" id="bubble">
+      <div id="bubbleText"></div>
+      <div class="choice-btns" id="choiceBtns" style="display:none">
+        <button type="button" class="choice-btn" id="chooseRename">✏️ 改名</button>
+        <button type="button" class="choice-btn" id="chooseWatermark">💧 加水印</button>
+        <button type="button" class="choice-btn cancel" id="chooseCancel" title="取消">✕</button>
+      </div>
+      <div class="wm-prog" id="wmProg" style="display:none"><i id="wmProgFill"></i></div>
+    </div>
     <div class="pet-wrap" id="pet-wrap">
       <img class="pet-gif" id="pet-gif" src="/miao/default.gif" alt="月薪喵" draggable="false" />
     </div>
@@ -53,8 +70,12 @@ function orbHtml() {
     const api = window.blackObsidian;
     const stage = document.getElementById('stage');
     const bubble = document.getElementById('bubble');
+    const bubbleText = document.getElementById('bubbleText');
+    const choiceBtns = document.getElementById('choiceBtns');
+    const wmProg = document.getElementById('wmProg');
+    const wmProgFill = document.getElementById('wmProgFill');
     const petGif = document.getElementById('pet-gif');
-    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default';
+    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default', choiceActive = false, lastNoticeToken = '';
 
     const GIF_MAP = {
       default: '/miao/default.gif',
@@ -67,31 +88,42 @@ function orbHtml() {
     };
 
     const IDLE_POOL = [
-      { key: 'comfort', duration: 5500, lines: ['好舒服呀~ 蹭蹭~ 🥰', '剪片辛苦啦，摸摸头~', '我就静静陪着你剪片~'] },
+      { key: 'comfort', duration: 5500, lines: ['好舒服呀~ 蹭蹭~ 🥰', '剪片辛苦啦，摸摸头~', '把文件拖给我可以改名或加水印哦~'] },
       { key: 'enjoy', duration: 5500, lines: ['今天也要开心导片哦 ✨', '啦啦啦~ 爆款预定！', '有我在，标点句号绝不丢！'] },
       { key: 'play', duration: 6000, lines: ['一起来玩手机呀~ 📱', '刷会儿手机放松一下眼睛吧~'] },
       { key: 'float', duration: 6000, lines: ['我去休息一下啦~ 💤', '呼噜噜…充个电~'] },
       { key: 'cry', duration: 5000, lines: ['拍拍小肚皮~ 陪陪我好不好~', '渲染队列交给我盯紧啦~'] }
     ];
 
-    function showMessage(text, duration = 2600) {
+    function showMessage(text, duration = 3000, opts = {}) {
       if (!text) return;
-      bubble.textContent = text;
+      choiceActive = Boolean(opts.choice);
+      bubbleText.textContent = text;
+      choiceBtns.style.display = opts.choice ? 'flex' : 'none';
+      wmProg.style.display = typeof opts.progress === 'number' ? 'block' : 'none';
+      if (typeof opts.progress === 'number') {
+        wmProgFill.style.width = Math.max(2, Math.min(100, opts.progress)) + '%';
+      }
+      bubble.classList.toggle('interactive', Boolean(opts.choice));
       bubble.classList.add('show');
       clearTimeout(bubbleTimer);
-      bubbleTimer = setTimeout(() => bubble.classList.remove('show'), duration);
+      if (duration > 0 && !opts.choice) {
+        bubbleTimer = setTimeout(() => {
+          if (!choiceActive) bubble.classList.remove('show');
+        }, duration);
+      }
     }
 
-    function switchGif(key, message, duration = 5200) {
+    function switchGif(key, message, duration = 5200, opts = {}) {
       const target = GIF_MAP[key] || GIF_MAP.default;
       if (currentKey !== key) {
         currentKey = key;
         petGif.src = target;
       }
       stage.dataset.pose = key;
-      if (message) showMessage(message, Math.min(duration, 3200));
+      if (message) showMessage(message, opts.choice ? 0 : Math.min(duration, 3600), opts);
       clearTimeout(gifTimer);
-      if (key !== 'default') {
+      if (key !== 'default' && !opts.choice) {
         gifTimer = setTimeout(() => {
           currentKey = 'default';
           petGif.src = GIF_MAP.default;
@@ -100,19 +132,17 @@ function orbHtml() {
       }
     }
 
-    // Time-of-day greeting (from DesktopPet-Miao pet.py)
     (function greetByTime() {
       const h = new Date().getHours();
       if (h >= 5 && h < 11) switchGif('enjoy', '早上好呀！新的一天元气满满~ ☀️', 4500);
       else if (h >= 11 && h < 14) switchGif('comfort', '中午好！记得按时吃饭休息哦~ 🍱', 4500);
-      else if (h >= 14 && h < 19) switchGif('play', '下午好！点我可展开剪映插件面板~ ✨', 4500);
-      else if (h >= 19 && h < 23) switchGif('comfort', '晚上好！今天剪片辛苦啦~ 🥰', 4500);
+      else if (h >= 14 && h < 19) switchGif('play', '下午好！点我可展开自动化悬浮窗~ ✨', 4500);
+      else if (h >= 19 && h < 23) switchGif('comfort', '晚上好！把视频拖给我可改名或加水印~ 🥰', 4500);
       else switchGif('float', '夜深了，早点休息哦~ 💤', 5500);
     })();
 
-    // Random idle animation switching
     setInterval(() => {
-      if (currentKey !== 'default') return;
+      if (currentKey !== 'default' || choiceActive) return;
       if (Math.random() < 0.6) {
         const pick = IDLE_POOL[Math.floor(Math.random() * IDLE_POOL.length)];
         const line = Math.random() < 0.55 ? pick.lines[Math.floor(Math.random() * pick.lines.length)] : '';
@@ -120,13 +150,45 @@ function orbHtml() {
       }
     }, 8500);
 
+    window.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    window.addEventListener('drop', async e => {
+      e.preventDefault(); e.stopPropagation();
+      const files = Array.from(e.dataTransfer?.files || []);
+      const paths = files.map(f => f.path || f.name).filter(Boolean);
+      if (!paths.length) return;
+      const res = await api?.companionAction?.('drop-paths', paths);
+      const count = res?.droppedFilesCount || paths.length;
+      switchGif('comfort', '收到 ' + count + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+    });
+
+    document.getElementById('chooseRename').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      bubble.classList.remove('show', 'interactive');
+      api?.companionAction?.('drop-choice', 'rename');
+    };
+    document.getElementById('chooseWatermark').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      switchGif('enjoy', '正在同目录批量加水印 0%…', 10000, { progress: 2 });
+      api?.companionAction?.('drop-choice', 'watermark');
+    };
+    document.getElementById('chooseCancel').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      bubble.classList.remove('show', 'interactive');
+      api?.companionAction?.('drop-choice', 'cancel');
+    };
+
     const togglePanel = () => {
+      if (choiceActive) return;
       petGif.style.transform = 'scale(0.94)';
       setTimeout(() => { petGif.style.transform = ''; }, 150);
       api?.companionAction?.('panel', 'toggle');
     };
 
-    stage.addEventListener('dblclick', () => {
+    stage.addEventListener('dblclick', e => {
+      if (e.target.closest('.choice-btns')) return;
       stage.classList.remove('jumping');
       void stage.offsetWidth;
       stage.classList.add('jumping');
@@ -135,7 +197,7 @@ function orbHtml() {
 
     let down = false, dragged = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
     stage.addEventListener('pointerdown', e => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || e.target.closest('.choice-btns')) return;
       down = true; dragged = false;
       startX = lastX = e.screenX;
       startY = lastY = e.screenY;
@@ -166,8 +228,20 @@ function orbHtml() {
     function render(s) {
       if (!s) return;
       const wm = s.watermark || {}, jy = s.jianying || {};
-      if (wm.running) showMessage('正在批量加水印 ' + wm.overallProgress + '% 🎬', 2000);
-      else if (jy.exporting) showMessage('正在自动导出剪映视频… 🚀', 2000);
+      if (s.pendingDropCount > 0 && !wm.running) {
+        switchGif('comfort', '收到 ' + s.pendingDropCount + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+        return;
+      }
+      if (wm.running) {
+        choiceActive = false;
+        showMessage('正在加水印 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { progress: wm.overallProgress || 2 });
+      } else if (s.orbNotice && s.orbNoticeToken && s.orbNoticeToken !== lastNoticeToken) {
+        lastNoticeToken = s.orbNoticeToken;
+        choiceActive = false;
+        switchGif('enjoy', s.orbNotice, 5000);
+      } else if (jy.exporting) {
+        showMessage('正在自动导出剪映视频… 🚀', 2500);
+      }
     }
     api?.onCompanionState?.(render);
     api?.companionAction?.('sync').then(render).catch(() => {});
@@ -175,82 +249,271 @@ function orbHtml() {
 }
 
 function panelHtml(acrylic) {
-  const surface = acrylic ? 'rgba(18, 22, 28, 0.42)' : 'linear-gradient(160deg, rgba(28,32,40,.97), rgba(14,17,22,.98))';
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵 · 剪映插件</title><style>${SHARED_STYLE}
+  const surface = acrylic ? 'rgba(16, 20, 26, 0.56)' : 'linear-gradient(160deg, rgba(24,28,36,.98), rgba(12,15,20,.99))';
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>悬浮窗 · 剪映自动化</title><style>${SHARED_STYLE}
   body { background: ${surface}; }
-  .wrap { height: 100%; display: flex; flex-direction: column; gap: 10px; padding: 12px 12px 10px; animation: pop .26s cubic-bezier(.34,1.56,.64,1); }
-  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(.97) } to { opacity: 1; transform: none } }
-  header { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.1); -webkit-app-region: drag; }
-  .avatar { width: 36px; height: 36px; border-radius: 10px; object-fit: contain; background: transparent; }
-  header h1 { font-size: 14px; font-weight: 800; } header p { font-size: 10.5px; color: #aab3bf; margin-top: 1px; }
+  .wrap { height: 100%; display: flex; flex-direction: column; gap: 9px; padding: 12px 12px 10px; animation: pop .24s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.98) } to { opacity: 1; transform: none } }
+  header { display: flex; align-items: center; gap: 9px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,.1); cursor: move; -webkit-app-region: drag; }
+  .avatar { width: 34px; height: 34px; border-radius: 10px; object-fit: contain; background: transparent; pointer-events: none; }
+  header h1 { font-size: 13.5px; font-weight: 800; letter-spacing: -.01em; }
+  header p { font-size: 10.5px; color: #aab3bf; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   header .grow { flex: 1; min-width: 0; }
-  .icon { -webkit-app-region: no-drag; width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
-    background: rgba(255,255,255,.06); color: #d7dde5; font-size: 12px; transition: all .15s; }
+  .icon { -webkit-app-region: no-drag; width: 27px; height: 27px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(255,255,255,.06); color: #d7dde5; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
   .icon:hover { border-color: #ffcf6e; color: #ffcf6e; }
   .icon.on { background: rgba(255,207,110,.2); border-color: #ffcf6e; color: #ffcf6e; }
-  .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 2px; }
+
+  /* 4-Stage Top Bar moved from Main Window into Floating Window */
+  .stage-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; background: rgba(0,0,0,.28); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,.09); }
+  .stage-tab { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 6px 7px; border-radius: 9px;
+    border: 1px solid transparent; background: transparent; color: #aeb7c4; text-align: left; transition: all .16s; }
+  .stage-tab:hover { color: #f3f6fa; background: rgba(255,255,255,.05); }
+  .stage-tab.active { background: rgba(255,207,110,.16); border-color: rgba(255,207,110,.55); color: #fff; box-shadow: 0 4px 12px rgba(0,0,0,.22); }
+  .stage-num { font-size: 9.5px; font-weight: 800; color: #ffcf6e; letter-spacing: .04em; }
+  .stage-tab strong { font-size: 11.5px; font-weight: 750; line-height: 1.2; }
+
+  .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 9px; padding-right: 2px; }
   .scroll::-webkit-scrollbar { width: 4px } .scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.18); border-radius: 4px }
-  .card { padding: 11px 12px; border-radius: 14px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,.08); display: flex; flex-direction: column; gap: 8px; transition: border-color .2s; }
+  .card { padding: 10px 11px; border-radius: 13px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.07); display: flex; flex-direction: column; gap: 8px; }
   .card.active { border-color: rgba(255,207,110,.65); }
+  .card[hidden] { display: none !important; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .title { font-size: 12.5px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
-  .meta { font-size: 11px; color: #aab3bf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 170px; }
+  .title { font-size: 12px; font-weight: 750; display: flex; align-items: center; gap: 6px; }
+  .meta { font-size: 10.5px; color: #aab3bf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 195px; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #64748b; flex-shrink: 0; }
   .dot.on { background: #8ee06b; box-shadow: 0 0 6px #8ee06b; } .dot.run { background: #ffcf6e; box-shadow: 0 0 8px #ffcf6e; }
+
+  .hotkeys { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .hk { padding: 2px 7px; border-radius: 999px; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.1); font-size: 10px; color: #c6cfdb; }
+  .hk kbd { color: #ffcf6e; font-weight: 800; font-family: Consolas, monospace; margin-right: 3px; }
+
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
   .btn { padding: 7px 8px; border-radius: 9px; border: 1px solid rgba(255,255,255,.14); background: rgba(255,255,255,.07);
-    color: #f1f4f8; font-size: 11.5px; font-weight: 650; transition: all .15s; }
+    color: #f1f4f8; font-size: 11px; font-weight: 650; transition: all .15s; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
   .btn:hover:not(:disabled) { border-color: #ffcf6e; background: rgba(255,207,110,.14); transform: translateY(-1px); }
-  .btn:disabled { opacity: .4; cursor: not-allowed; }
-  .btn.primary { background: #ffcf6e; border-color: #ffcf6e; color: #1c1206; }
+  .btn:disabled { opacity: .42; cursor: not-allowed; }
+  .btn.primary { background: #ffcf6e; border-color: #ffcf6e; color: #1c1206; font-weight: 750; }
   .btn.danger { border-color: rgba(248,113,113,.6); color: #fca5a5; }
-  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
-  .btn-spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: bspin .65s linear infinite; flex-shrink: 0; }
+  .btn.active { background: rgba(255,207,110,.22); border-color: #ffcf6e; color: #ffcf6e; }
+  .btn-spin { width: 11px; height: 11px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: bspin .65s linear infinite; flex-shrink: 0; }
   @keyframes bspin { to { transform: rotate(360deg); } }
-  .bar { height: 5px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; }
-  .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcf6e, #ff9d5c); transition: width .25s; }
-  .log { font-size: 10.5px; color: #c4cbd4; background: rgba(0,0,0,.22); border-radius: 8px; padding: 6px 8px; line-height: 1.5;
-    max-height: 48px; overflow: hidden; white-space: pre-wrap; word-break: break-all; }
-  .jobs { display: flex; flex-direction: column; gap: 4px; }
-  .job { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d7dde5; }
+
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > span { font-size: 10.5px; color: #b9c2ce; font-weight: 600; }
+  .input, .select { width: 100%; padding: 6px 8px; border-radius: 8px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.32); color: #f5f7fa; font-size: 11px; outline: none; }
+  .input:focus, .select:focus { border-color: #ffcf6e; }
+  .path-row { display: flex; align-items: center; gap: 5px; }
+  .path-row .input { flex: 1; min-width: 0; }
+
+  .table-wrap { max-height: 145px; overflow-y: auto; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.24); }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
+  th { position: sticky; top: 0; background: rgba(18,22,28,.95); color: #9aa5b4; font-size: 10px; }
+  tr.sel { background: rgba(255,207,110,.13); }
+  .empty-tip { padding: 14px 10px; text-align: center; font-size: 11px; color: #94a3b8; }
+
+  .drop-guide { padding: 12px; border-radius: 11px; border: 1.5px dashed rgba(255,182,193,.65); background: rgba(255,182,193,.08);
+    text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: pointer; transition: all .16s; }
+  .drop-guide:hover, .drop-guide.drag { background: rgba(255,182,193,.16); border-color: #ffb6c1; }
+  .drop-guide strong { font-size: 11.5px; color: #ffd6e0; }
+  .drop-guide small { font-size: 10px; color: #cbd5e1; line-height: 1.45; }
+
+  details.sub-panel { border-top: 1px solid rgba(255,255,255,.09); padding-top: 7px; }
+  details.sub-panel > summary { font-size: 11px; font-weight: 700; color: #d7dde5; cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; }
+  .waits-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 6px; }
+  .waits-grid label { display: flex; flex-direction: column; gap: 2px; font-size: 9.5px; color: #aab3bf; }
+
+  .bar { height: 6px; border-radius: 999px; background: rgba(0,0,0,.35); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #ffcf6e, #ff7aa2); transition: width .25s; }
+  .log { font-size: 10.5px; color: #c4cbd4; background: rgba(0,0,0,.26); border-radius: 8px; padding: 6px 8px; line-height: 1.45;
+    max-height: 64px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+  .jobs { display: flex; flex-direction: column; gap: 4px; max-height: 150px; overflow-y: auto; }
+  .job { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d7dde5; padding: 4px 6px; border-radius: 7px; background: rgba(0,0,0,.2); }
   .job span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .job b { font-weight: 600; color: #aab3bf; } .job b.done { color: #8ee06b; } .job b.err { color: #fca5a5; } .job b.run { color: #ffcf6e; }
-  .modal { border-color: #ffcf6e; background: rgba(255,207,110,.12); }
-  .modal p { font-size: 11.5px; line-height: 1.6; white-space: pre-wrap; }
-  .switch { position: relative; width: 38px; height: 21px; border-radius: 999px; border: 1px solid rgba(255,255,255,.2); background: rgba(255,255,255,.1); transition: all .2s; }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #e5e7eb; transition: transform .22s cubic-bezier(.34,1.56,.64,1); }
-  .switch.on { background: #ffcf6e; border-color: #ffcf6e; } .switch.on::after { transform: translateX(17px); background: #1c1206; }
-  .toast { position: fixed; left: 12px; right: 12px; bottom: 54px; padding: 8px 10px; border-radius: 10px; font-size: 11.5px;
-    background: rgba(20,16,12,.92); border: 1px solid rgba(255,207,110,.5); color: #ffe2a8; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; }
+  .modal { border-color: #ffcf6e; background: rgba(255,207,110,.14); }
+  .modal p { font-size: 11px; line-height: 1.55; white-space: pre-wrap; }
+  .toast { position: fixed; left: 12px; right: 12px; bottom: 48px; padding: 8px 10px; border-radius: 10px; font-size: 11px;
+    background: rgba(20,16,12,.94); border: 1px solid rgba(255,207,110,.55); color: #ffe2a8; opacity: 0; transform: translateY(6px); transition: all .2s; pointer-events: none; z-index: 30; }
   .toast.show { opacity: 1; transform: none; }
   footer { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   </style></head><body><div class="wrap">
-  <header>
+  <header id="panelHeader">
     <img class="avatar" src="/miao/default.gif" alt="月薪喵" draggable="false" />
-    <div class="grow"><h1>月薪喵 · 剪映插件</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
-    <button class="icon on" id="dockBtn" title="磁吸跟随剪映窗口">🧲</button>
-    <button class="icon" id="closeBtn" title="收起面板">✕</button>
+    <div class="grow"><h1>剪映自动化 · 悬浮窗</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
+    <button class="icon" id="pkSwitch" title="剪贴板句号守护开关">🛡️</button>
+    <button class="icon on" id="dockBtn" title="自动磁吸跟随剪映窗口">🧲</button>
+    <button class="icon" id="closeBtn" title="收起悬浮窗面板（不退出软件）">✕</button>
   </header>
+
+  <!-- 4-Stage Top Bar (01 批量导出 / 02 字幕工程 / 03 批量改名 / 04 样片水印) -->
+  <nav class="stage-bar" role="tablist" aria-label="剪映自动化四阶段导航">
+    <button type="button" class="stage-tab active" data-stage="export" role="tab">
+      <span class="stage-num">01</span><strong>批量导出</strong>
+    </button>
+    <button type="button" class="stage-tab" data-stage="subtitles" role="tab">
+      <span class="stage-num">02</span><strong>字幕工程</strong>
+    </button>
+    <button type="button" class="stage-tab" data-stage="rename" role="tab">
+      <span class="stage-num">03</span><strong>批量改名</strong>
+    </button>
+    <button type="button" class="stage-tab" data-stage="watermark" role="tab">
+      <span class="stage-num">04</span><strong>样片水印</strong>
+    </button>
+  </nav>
+
   <div class="scroll">
     <div class="card modal" id="modalCard" hidden>
-      <div class="title" id="modalTitle">确认</div><p id="modalMsg"></p>
-      <div class="grid"><button class="btn" id="modalNo">取消</button><button class="btn primary" id="modalYes">确认执行</button></div>
-    </div>
-
-    <div class="card" id="jyCard">
-      <div class="row"><div class="title"><span class="dot" id="jyDot"></span>剪映自动化</div><span class="meta" id="jyMeta">就绪</span></div>
-      <div class="log" id="jyLog">等待指令…</div>
+      <div class="title" id="modalTitle">确认操作</div>
+      <p id="modalMsg"></p>
       <div class="grid">
-        <button class="btn" id="jyScan">AI 扫描草稿</button>
-        <button class="btn primary" id="jyExport">批量导出</button>
-        <button class="btn" id="jyExtract">提取字幕</button>
-        <button class="btn danger" id="jyStop">紧急停止</button>
+        <button class="btn" id="modalNo">取消</button>
+        <button class="btn primary" id="modalYes">确认执行</button>
       </div>
     </div>
 
-    <div class="card" id="wmCard">
-      <div class="row"><div class="title"><span class="dot" id="wmDot"></span>批量水印</div><span class="meta" id="wmMeta">空闲</span></div>
+    <!-- STAGE 01: 批量导出 -->
+    <div class="card" id="stageExport">
+      <div class="row">
+        <div class="title"><span class="dot" id="jyDot"></span><span id="jyMeta">就绪</span></div>
+        <button class="btn danger" id="jyStop" style="padding:3px 8px;font-size:10px">中断 · F10</button>
+      </div>
+      <div class="hotkeys">
+        <span class="hk"><kbd>F8</kbd>录制坐标</span>
+        <span class="hk"><kbd>F9</kbd>跳过等待</span>
+        <span class="hk"><kbd>F10</kbd>紧急中断</span>
+      </div>
+      <div class="log" id="jyGuideBox">打开剪映首页后，可录制坐标或 AI 扫描草稿列表。</div>
+      <div class="grid-3">
+        <button class="btn" id="jyWizard">🎯 录制坐标</button>
+        <button class="btn" id="jyScan">📸 识别截图</button>
+        <button class="btn primary" id="jyExport">🚀 批量导出</button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th style="width:42px">起点</th><th>草稿名称</th><th style="width:64px">状态</th></tr></thead>
+          <tbody id="jyQueueBody">
+            <tr><td colspan="3" class="empty-tip">点击「📸 识别截图」AI 扫描剪映首页草稿</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <details class="sub-panel" open>
+        <summary><span>导出模式、坐标模板与模型连接</span><span>⌄</span></summary>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          <div class="grid">
+            <label class="field">
+              <span>导出模式</span>
+              <select class="select" id="jyModeSelect">
+                <option value="return_home">收起至首页 · 后台</option>
+                <option value="wait_close">等待完成 · 逐个</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>坐标模板 <small id="jyResLabel"></small></span>
+              <select class="select" id="jyTplSelect">
+                <option value="">请先录制坐标</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>AI 视觉识别模型（复用主窗口连接）</span>
+            <select class="select" id="jyModelSelect">
+              <option value="">自动选用已配置的 Gemini 模型</option>
+            </select>
+          </label>
+          <div class="waits-grid">
+            <label><span>打开草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_open_draft" value="3"></label>
+            <label><span>点击导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_export" value="1"></label>
+            <label><span>确认导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_confirm" value="2"></label>
+            <label><span>收起首页(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_popup_close" value="3"></label>
+            <label><span>关闭窗口(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_close_btn" value="2"></label>
+            <label><span>关闭草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_draft_close" value="2"></label>
+          </div>
+          <button class="btn" id="jySaveWaits">保存等待时间参数</button>
+        </div>
+      </details>
+
+      <details class="sub-panel">
+        <summary><span>运行日志</span><span id="jyLogCount">0 条</span></summary>
+        <div class="log" id="jyLog" style="margin-top:6px">等待指令…</div>
+      </details>
+    </div>
+
+    <!-- STAGE 02: 字幕工程 -->
+    <div class="card" id="stageSubtitles" hidden>
+      <div class="title">02 字幕工程（自动记忆上次目录）</div>
+      <div class="field">
+        <span>剪映草稿根目录 (JianyingPro Drafts)</span>
+        <div class="path-row">
+          <input class="input" id="jyDraftDir" readonly placeholder="选择剪映 Drafts 草稿根目录（自动记忆）" />
+          <button class="btn" id="jyPickDraftDir">浏览</button>
+        </div>
+      </div>
+      <div class="field">
+        <span>SRT 字幕导出目录</span>
+        <div class="path-row">
+          <input class="input" id="jySubOut" readonly placeholder="选择字幕导出文件夹（自动记忆）" />
+          <button class="btn" id="jyPickSubOut">浏览</button>
+        </div>
+      </div>
+      <div class="grid">
+        <button class="btn primary" id="jyExtract">提取字幕并隐藏轨道</button>
+        <button class="btn" id="jyFonts">统一 Noto Sans Bold</button>
+      </div>
+      <button class="btn" id="jyUnhide">恢复所有草稿字幕显示</button>
+      <small style="font-size:10px;color:#94a3b8">提示：修改字体或显隐轨道前请先退出剪映，工具会自动备份草稿 JSON。</small>
+    </div>
+
+    <!-- STAGE 03: 批量改名 -->
+    <div class="card" id="stageRename" hidden>
+      <div class="drop-guide" id="renameDropZone">
+        <strong>🐾 请将需要改名的文件或文件夹拖放到「月薪喵」上</strong>
+        <small>支持拖放整个文件夹（自动处理子文件），也可直接拖入此处或点击下方按钮选择</small>
+      </div>
+      <div class="row">
+        <span class="meta" id="renameFilesMeta">尚未拖入文件</span>
+        <div style="display:flex;gap:5px">
+          <button class="btn" id="jyPickRenameDir" style="padding:4px 8px;font-size:10px">选文件夹</button>
+          <button class="btn" id="jyPickRenameFiles" style="padding:4px 8px;font-size:10px">选文件</button>
+        </div>
+      </div>
+      <div class="grid">
+        <button class="btn active" id="renameModeTpl">按集数模板</button>
+        <button class="btn" id="renameModeAi">AI 智能命名</button>
+      </div>
+      <div class="field">
+        <span>命名模板</span>
+        <input class="input" id="renameTemplate" value="短剧名称_第1集" placeholder="例如：短剧名称_第1集" />
+      </div>
+      <div class="grid">
+        <button class="btn" id="jyPreviewRename">生成改名预览</button>
+        <button class="btn primary" id="jyExecuteRename" disabled>开始执行改名</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>原文件名</th><th>新文件名</th></tr></thead>
+          <tbody id="jyPlanBody">
+            <tr><td colspan="2" class="empty-tip">拖入文件并选择模式后点击「生成改名预览」</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- STAGE 04: 样片水印 -->
+    <div class="card" id="stageWatermark" hidden>
+      <div class="drop-guide" id="wmDropZone">
+        <strong>💧 请将需要加水印的视频或文件夹拖放到「月薪喵」上</strong>
+        <small>选择「加水印」后将在原视频同目录直接输出「原文件名+样片.mp4」，月薪喵实时显示进度并在完成后粉框提醒</small>
+      </div>
+      <div class="row">
+        <div class="title"><span class="dot" id="wmDot"></span>批量样片水印</div>
+        <span class="meta" id="wmMeta">空闲</span>
+      </div>
       <div class="bar"><i id="wmBar"></i></div>
       <div class="jobs" id="wmJobs"></div>
       <div class="grid">
@@ -258,22 +521,78 @@ function panelHtml(acrylic) {
         <button class="btn primary" id="wmRun">开始合成</button>
       </div>
     </div>
-
-    <div class="card">
-      <div class="row"><div class="title"><span class="dot" id="pkDot"></span>剪贴板句号守护</div><button class="switch" id="pkSwitch" title="开关"></button></div>
-      <span class="meta" id="pkMeta" style="max-width:none">复制到剪映的字幕自动保留标点</span>
-    </div>
   </div>
+
   <footer>
     <button class="btn" id="launchJy">🚀 启动剪映</button>
-    <button class="btn" id="openMain">🏠 打开主工作台</button>
+    <button class="btn" id="openMain">🏠 返回主工作台</button>
   </footer>
   <div class="toast" id="toast"></div>
   </div>
   <script>
     const api = window.blackObsidian, $ = id => document.getElementById(id);
-    let state = null, toastTimer = 0;
-    const toast = msg => { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); };
+    let state = null, toastTimer = 0, currentStage = localStorage.getItem('xm.jianying.stage') || 'export';
+    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false;
+
+    const toast = msg => {
+      const t = $('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+    };
+
+    $('panelHeader').addEventListener('pointerdown', e => {
+      if (e.button !== 0 || e.target.closest('button')) return;
+      api?.companionAction?.('panel-drag');
+    });
+
+    function switchStage(stage, notifyCat = false) {
+      if (!['export', 'subtitles', 'rename', 'watermark'].includes(stage)) stage = 'export';
+      currentStage = stage;
+      try { localStorage.setItem('xm.jianying.stage', stage); } catch {}
+      document.querySelectorAll('.stage-tab').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.stage === stage);
+      });
+      $('stageExport').hidden = stage !== 'export';
+      $('stageSubtitles').hidden = stage !== 'subtitles';
+      $('stageRename').hidden = stage !== 'rename';
+      $('stageWatermark').hidden = stage !== 'watermark';
+      if (notifyCat && (stage === 'rename' || stage === 'watermark')) {
+        toast('请将需要改名或加水印的文件/文件夹拖放到月薪喵上~');
+        api?.companionAction?.('prompt-drop', stage);
+      }
+    }
+
+    document.querySelectorAll('.stage-tab').forEach(btn => {
+      btn.onclick = () => switchStage(btn.dataset.stage, true);
+    });
+
+    function loadCachedModels() {
+      try {
+        const cached = JSON.parse(localStorage.getItem('xm.providers.cache') || '[]');
+        const savedKey = localStorage.getItem('xm.jianying.model') || '';
+        const sel = $('jyModelSelect');
+        const opts = [];
+        for (const p of cached) {
+          for (const m of (p?.models || [])) {
+            if (/gemini/i.test(m) || p?.protocol === 'gemini') {
+              opts.push({ key: p.id + '::' + m, label: m + ' · ' + (p.name || p.id), provider: p, model: m });
+            }
+          }
+        }
+        if (opts.length) {
+          sel.innerHTML = opts.map(o => '<option value="' + o.key + '">' + o.label + '</option>').join('');
+          if (savedKey && opts.some(o => o.key === savedKey)) sel.value = savedKey;
+          else { sel.value = opts[0].key; localStorage.setItem('xm.jianying.model', opts[0].key); }
+        }
+        sel.onchange = () => {
+          localStorage.setItem('xm.jianying.model', sel.value);
+        };
+      } catch {}
+    }
+    loadCachedModels();
+
     const act = async (action, value, btnEl, loadingLabel) => {
       let origHtml = '';
       if (btnEl && !btnEl.disabled) {
@@ -285,41 +604,130 @@ function panelHtml(acrylic) {
         const res = await api.companionAction(action, value);
         if (res && res.error) toast(res.error);
         else if (res) render(res);
+        return res;
       } catch (e) {
         toast(String(e && e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, ''));
       } finally {
         if (btnEl && origHtml) {
-          setTimeout(() => { btnEl.disabled = false; if (btnEl.querySelector('.btn-spin')) btnEl.innerHTML = origHtml; }, action === 'launch-jy' ? 1400 : 250);
+          setTimeout(() => {
+            btnEl.disabled = false;
+            if (btnEl.querySelector('.btn-spin')) btnEl.innerHTML = origHtml;
+          }, action === 'launch-jy' ? 1400 : 260);
         }
       }
     };
+
+    (async function restoreRememberedPaths() {
+      try {
+        const savedDraft = localStorage.getItem('xm.jianying.draftDir') || '';
+        const savedSub = localStorage.getItem('xm.jianying.subtitleOutput') || '';
+        if (savedDraft) $('jyDraftDir').value = savedDraft;
+        if (savedSub) $('jySubOut').value = savedSub;
+        if (savedDraft || savedSub) {
+          await api?.companionAction?.('jy-paths', { draftDir: savedDraft || undefined, subtitleOutput: savedSub || undefined });
+        }
+      } catch {}
+    })();
+
     const statusText = { pending: '排队', processing: '合成中', done: '完成', error: '失败', cancelled: '取消' };
+
     function render(s) {
-      if (!s) return; state = s;
+      if (!s) return;
+      state = s;
+      if (s.activeStage && s.activeStage !== currentStage) {
+        switchStage(s.activeStage, false);
+      }
       const jy = s.jianying || {}, wm = s.watermark || {};
       $('dockBtn').className = 'icon' + (s.autoDock ? ' on' : '');
-      $('dockLabel').textContent = s.jianyingFound ? (s.autoDock ? '✓ 已吸附剪映窗口' : '已检测到剪映') : '桌面置顶 · 剪映未运行';
+      $('pkSwitch').className = 'icon' + (s.periodEnabled ? ' on' : '');
+      $('dockLabel').textContent = (s.jianyingFound ? (s.autoDock ? '✓ 已吸附剪映' : '已检测到剪映') : '桌面置顶') + (s.periodEnabled ? ' · 句号守护中' : '');
+
       const jyRun = jy.busy || jy.exporting || jy.recording;
       $('jyDot').className = 'dot ' + (jyRun ? 'run' : jy.ready ? 'on' : '');
-      $('jyCard').className = 'card' + (jyRun ? ' active' : '');
       $('jyMeta').textContent = jy.status || '就绪';
-      $('jyLog').textContent = jy.lastLog || jy.guide || '等待指令…';
-      $('jyScan').disabled = jyRun || !jy.ready;
-      $('jyExport').disabled = jyRun || !jy.ready || !jy.queueCount;
-      $('jyExport').textContent = jy.queueCount ? '批量导出 (' + jy.queueCount + ')' : '批量导出';
-      $('jyExtract').disabled = jyRun || !jy.ready;
+      $('jyGuideBox').textContent = jy.guide || jy.lastLog || '打开剪映首页后，可录制坐标或 AI 扫描草稿列表。';
+      $('jyLog').textContent = Array.isArray(jy.logs) && jy.logs.length ? jy.logs.join('\\n') : (jy.lastLog || '等待指令…');
+      $('jyLogCount').textContent = (Array.isArray(jy.logs) ? jy.logs.length : 0) + ' 条';
+
+      if (!$('jyWizard').querySelector('.btn-spin')) $('jyWizard').disabled = jyRun || !jy.ready;
+      if (!$('jyScan').querySelector('.btn-spin')) $('jyScan').disabled = jyRun || !jy.ready;
+      if (!$('jyExport').querySelector('.btn-spin')) {
+        $('jyExport').disabled = jyRun || !jy.ready || !jy.queueCount;
+        $('jyExport').textContent = jy.queueCount ? '🚀 导出 (' + jy.queueCount + ')' : '🚀 批量导出';
+      }
+
+      const queue = Array.isArray(jy.queue) ? jy.queue : [];
+      if (selectedDraftIdx >= queue.length) selectedDraftIdx = 0;
+      const qBody = $('jyQueueBody');
+      if (!queue.length) {
+        qBody.innerHTML = '<tr><td colspan="3" class="empty-tip">点击「📸 识别截图」AI 扫描剪映首页草稿</td></tr>';
+      } else {
+        qBody.innerHTML = '';
+        queue.forEach((item, idx) => {
+          const tr = document.createElement('tr');
+          if (idx === selectedDraftIdx) tr.className = 'sel';
+          tr.onclick = () => { selectedDraftIdx = idx; render(state); };
+          tr.innerHTML = '<td><input type="radio" name="jy-q" ' + (idx === selectedDraftIdx ? 'checked' : '') + '/></td><td>' +
+            String(item.name || '').replace(/</g, '&lt;') + '</td><td>' + String(item.st || '待导出') + '</td>';
+          qBody.appendChild(tr);
+        });
+      }
+
+      if (jy.mode && document.activeElement !== $('jyModeSelect')) $('jyModeSelect').value = jy.mode;
+      if (Array.isArray(jy.resolution)) $('jyResLabel').textContent = '(' + jy.resolution.join('×') + ')';
+      if (Array.isArray(jy.templates) && document.activeElement !== $('jyTplSelect')) {
+        const tSel = $('jyTplSelect');
+        if (!jy.templates.length) {
+          tSel.innerHTML = '<option value="">请先录制坐标</option>';
+        } else {
+          tSel.innerHTML = jy.templates.map(t => '<option value="' + t.id + '">' + t.name + '</option>').join('');
+          if (jy.templateId) tSel.value = jy.templateId;
+        }
+      }
+      if (jy.waits && !waitsDirty) {
+        for (const k of ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close']) {
+          const el = $('w_' + k);
+          if (el && jy.waits[k] !== undefined && document.activeElement !== el) el.value = jy.waits[k];
+        }
+      }
+
+      if (jy.draftDir) {
+        $('jyDraftDir').value = jy.draftDir;
+        try { localStorage.setItem('xm.jianying.draftDir', jy.draftDir); } catch {}
+      }
+      if (jy.subtitleOutput) {
+        $('jySubOut').value = jy.subtitleOutput;
+        try { localStorage.setItem('xm.jianying.subtitleOutput', jy.subtitleOutput); } catch {}
+      }
+
+      const fCount = Number(jy.fileCount || 0);
+      $('renameFilesMeta').textContent = fCount > 0 ? ('✓ 已载入 ' + fCount + ' 个待改名文件') : (renameFolder ? ('目录：' + renameFolder) : '尚未拖入文件');
+      const plan = Array.isArray(jy.plan) ? jy.plan : [];
+      $('jyExecuteRename').disabled = jyRun || !plan.length;
+      if (!$('jyExecuteRename').querySelector('.btn-spin')) {
+        $('jyExecuteRename').textContent = plan.length ? ('开始执行改名 (' + plan.length + ')') : '开始执行改名';
+      }
+      const pBody = $('jyPlanBody');
+      if (!plan.length) {
+        pBody.innerHTML = '<tr><td colspan="2" class="empty-tip">拖入文件并选择模式后点击「生成改名预览」</td></tr>';
+      } else {
+        pBody.innerHTML = plan.map(p => '<tr><td>' + String(p.old_name || '').replace(/</g, '&lt;') + '</td><td>' + String(p.new_name || '').replace(/</g, '&lt;') + '</td></tr>').join('');
+      }
+
       const m = jy.modal;
       $('modalCard').hidden = !m;
       if (m) { $('modalTitle').textContent = m.title || '确认'; $('modalMsg').textContent = m.message || ''; }
+
       $('wmDot').className = 'dot ' + (wm.running ? 'run' : wm.totalCount ? 'on' : '');
-      $('wmCard').className = 'card' + (wm.running ? ' active' : '');
       $('wmMeta').textContent = wm.totalCount ? wm.completedCount + '/' + wm.totalCount + ' · ' + wm.overallProgress + '%' : '空闲';
       $('wmBar').style.width = (wm.overallProgress || 0) + '%';
-      $('wmRun').textContent = wm.running ? '停止合成' : '开始合成';
-      $('wmRun').className = 'btn ' + (wm.running ? 'danger' : 'primary');
-      $('wmRun').disabled = !wm.running && !(wm.jobs || []).some(j => j.status !== 'done' && j.status !== 'processing');
+      if (!$('wmRun').querySelector('.btn-spin')) {
+        $('wmRun').textContent = wm.running ? '停止合成' : '开始合成';
+        $('wmRun').className = 'btn ' + (wm.running ? 'danger' : 'primary');
+        $('wmRun').disabled = !wm.running && !(wm.jobs || []).some(j => j.status !== 'done' && j.status !== 'processing');
+      }
       $('wmJobs').innerHTML = '';
-      (wm.jobs || []).slice(-4).forEach(j => {
+      (wm.jobs || []).slice(-6).forEach(j => {
         const row = document.createElement('div'); row.className = 'job';
         const name = document.createElement('span'); name.textContent = j.fileName; name.title = j.outputPath || '';
         const st = document.createElement('b');
@@ -329,23 +737,90 @@ function panelHtml(acrylic) {
         if (j.status === 'done') { row.style.cursor = 'pointer'; row.title = '点击定位成片'; row.onclick = () => act('wm-open', j.outputPath); }
         $('wmJobs').append(row);
       });
-      $('pkSwitch').className = 'switch' + (s.periodEnabled ? ' on' : '');
-      $('pkDot').className = 'dot ' + (s.periodEnabled ? 'on' : '');
-      $('pkMeta').textContent = s.periodEnabled ? '✓ 守护中：复制字幕到剪映自动保留句号' : '已关闭：开启后复制到剪映的字幕自动保留标点';
     }
+
     $('closeBtn').onclick = () => act('panel', false);
     $('dockBtn').onclick = () => act('toggle-dock');
-    $('jyScan').onclick = () => act('jy-scan', null, $('jyScan'), '扫描中…');
-    $('jyExport').onclick = () => act('jy-export', null, $('jyExport'), '启动导出…');
-    $('jyExtract').onclick = () => act('jy-extract', null, $('jyExtract'), '提取中…');
+    $('pkSwitch').onclick = () => act('toggle-period');
+    $('jyWizard').onclick = () => act('jy-wizard', null, $('jyWizard'), '录制中…');
+    $('jyScan').onclick = () => act('jy-scan', { modelKey: $('jyModelSelect').value }, $('jyScan'), '识别中…');
+    $('jyExport').onclick = () => act('jy-export', { index: selectedDraftIdx }, $('jyExport'), '启动导出…');
     $('jyStop').onclick = () => act('jy-stop');
+    $('jyModeSelect').onchange = e => act('jy-settings', { mode: e.target.value });
+    $('jyTplSelect').onchange = e => e.target.value && act('jy-select-tpl', { id: e.target.value });
+    ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
+      $('w_' + k).oninput = () => { waitsDirty = true; };
+    });
+    $('jySaveWaits').onclick = () => {
+      const waits = {};
+      ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
+        waits[k] = Number($('w_' + k).value) || 1;
+      });
+      waitsDirty = false;
+      act('jy-settings', { waits }, $('jySaveWaits'), '保存中…');
+    };
+
+    $('jyPickDraftDir').onclick = async () => {
+      const res = await act('jy-pick-path', 'draftDir', $('jyPickDraftDir'), '选择中…');
+      if (res?.jianying?.draftDir) {
+        try { localStorage.setItem('xm.jianying.draftDir', res.jianying.draftDir); } catch {}
+      }
+    };
+    $('jyPickSubOut').onclick = async () => {
+      const res = await act('jy-pick-path', 'subtitleOutput', $('jyPickSubOut'), '选择中…');
+      if (res?.jianying?.subtitleOutput) {
+        try { localStorage.setItem('xm.jianying.subtitleOutput', res.jianying.subtitleOutput); } catch {}
+      }
+    };
+    $('jyExtract').onclick = () => act('jy-extract', null, $('jyExtract'), '提取中…');
+    $('jyFonts').onclick = () => act('jy-fonts', null, $('jyFonts'), '处理中…');
+    $('jyUnhide').onclick = () => act('jy-unhide', null, $('jyUnhide'), '恢复中…');
+
+    $('renameModeTpl').onclick = () => {
+      aiRenameMode = false;
+      $('renameModeTpl').classList.add('active');
+      $('renameModeAi').classList.remove('active');
+    };
+    $('renameModeAi').onclick = () => {
+      aiRenameMode = true;
+      $('renameModeAi').classList.add('active');
+      $('renameModeTpl').classList.remove('active');
+    };
+    $('jyPickRenameDir').onclick = async () => {
+      const res = await act('jy-pick-rename-dir', null, $('jyPickRenameDir'), '选择中…');
+      if (res?.renameFolder) renameFolder = res.renameFolder;
+    };
+    $('jyPickRenameFiles').onclick = () => act('jy-pick-rename-files', null, $('jyPickRenameFiles'), '选择中…');
+    $('jyPreviewRename').onclick = () => act('jy-preview-rename', {
+      folder: renameFolder,
+      template: $('renameTemplate').value.trim() || '短剧名称_第1集',
+      ai: aiRenameMode,
+      modelKey: $('jyModelSelect').value
+    }, $('jyPreviewRename'), '生成中…');
+    $('jyExecuteRename').onclick = () => act('jy-execute-rename', null, $('jyExecuteRename'), '改名中…');
+
+    ['renameDropZone', 'wmDropZone'].forEach(id => {
+      const z = $(id);
+      z.onclick = () => act('prompt-drop', currentStage);
+      z.ondragover = e => { e.preventDefault(); z.classList.add('drag'); };
+      z.ondragleave = () => z.classList.remove('drag');
+      z.ondrop = async e => {
+        e.preventDefault();
+        z.classList.remove('drag');
+        const files = Array.from(e.dataTransfer?.files || []);
+        const paths = files.map(f => f.path || f.name).filter(Boolean);
+        if (paths.length) await act('drop-paths', paths);
+      };
+    });
+
     $('modalYes').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: true });
     $('modalNo').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: false });
     $('wmAdd').onclick = () => act('wm-add');
     $('wmRun').onclick = () => act(state?.watermark?.running ? 'wm-cancel' : 'wm-start', null, $('wmRun'), '启动中…');
-    $('pkSwitch').onclick = () => act('toggle-period');
     $('launchJy').onclick = () => act('launch-jy', null, $('launchJy'), '启动剪映中…');
     $('openMain').onclick = () => act('navigate', '');
+
+    switchStage(currentStage, false);
     api?.onCompanionState?.(render);
     act('sync');
   </script></body></html>`;
@@ -358,7 +833,7 @@ function companionHtml() {
   const orb = orbHtml();
   const panelAcrylic = panelHtml(true);
   const panelSolid = panelHtml(false);
-  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>月薪喵 · 剪映插件</title></head><body style="margin:0;background:transparent;overflow:hidden"><script>
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>悬浮窗 · 剪映自动化</title></head><body style="margin:0;background:transparent;overflow:hidden"><script>
     (function () {
       var params = new URLSearchParams(location.search);
       var mode = params.get('mode') === 'panel' ? 'panel' : 'orb';
@@ -390,6 +865,10 @@ export function createCompanionDock({
   let visible = false;
   let pollTimer = null;
   let lastJianying = null;
+  let activeStage = 'export';
+  let pendingDropFiles = [];
+  let orbNotice = '';
+  let orbNoticeToken = '';
   const acrylic = supportsAcrylic();
   const normalizedBaseUrl = typeof baseUrl === 'string' ? baseUrl.trim().replace(/\/+$/, '') : '';
   const resolveOrbUrl = () => normalizedBaseUrl ? `${normalizedBaseUrl}/companion-orb.html` : toDataUrl(orbHtml());
@@ -435,7 +914,6 @@ export function createCompanionDock({
       ...PANEL_SIZE,
       show: false, frame: false, resizable: false, maximizable: false, minimizable: false, fullscreenable: false,
       skipTaskbar: true, alwaysOnTop: true, icon: iconPath, roundedCorners: true,
-      // Windows 11: real desktop acrylic blur behind the panel; older systems fall back to a solid glass tint.
       ...(acrylic ? { backgroundMaterial: 'acrylic', backgroundColor: '#00000000' } : { backgroundColor: '#14181e' }),
       webPreferences,
     });
@@ -470,13 +948,26 @@ export function createCompanionDock({
     const jw = jy?.jianyingWindow || {};
     const logs = Array.isArray(jy?.logs) ? jy.logs : [];
     return {
-      visible, panelOpen, autoDock, acrylic,
+      visible, panelOpen, autoDock, acrylic, activeStage,
+      pendingDropCount: pendingDropFiles.length,
+      orbNotice, orbNoticeToken,
       jianyingFound: Boolean(jw.found && !jw.minimized),
       jianyingWindow: jw,
       jianying: {
         ready: Boolean(jy?.ready), busy: Boolean(jy?.busy), exporting: Boolean(jy?.exporting), recording: Boolean(jy?.recording),
         status: jy?.status || '引擎预热中…', guide: jy?.guide || '', modal: jy?.modal || null,
+        queue: Array.isArray(jy?.queue) ? jy.queue : [],
         queueCount: Array.isArray(jy?.queue) ? jy.queue.length : 0,
+        plan: Array.isArray(jy?.plan) ? jy.plan : [],
+        fileCount: Number(jy?.fileCount || 0),
+        mode: jy?.mode || 'return_home',
+        waits: jy?.waits || {},
+        templates: Array.isArray(jy?.templates) ? jy.templates : [],
+        templateId: jy?.templateId || '',
+        resolution: Array.isArray(jy?.resolution) ? jy.resolution : [1920, 1080],
+        draftDir: jy?.draftDir || '',
+        subtitleOutput: jy?.subtitleOutput || '',
+        logs,
         lastLog: logs.length ? String(logs[logs.length - 1]) : '',
       },
       watermark: wm || { running: false, totalCount: 0, completedCount: 0, overallProgress: 0, jobs: [] },
@@ -544,12 +1035,15 @@ export function createCompanionDock({
   }
 
   async function toggle() {
-    // When invoked from the main window's "🐱 月薪喵" button or tray:
-    // if the plugin panel is not currently open, show the orb AND pop open the frosted-glass panel on top.
     if (!visible || !alive(orb) || !orb.isVisible() || !panelOpen || !alive(panel) || !panel.isVisible()) {
       return show(true);
     }
     return hide();
+  }
+
+  function setNoticeOnOrb(msg) {
+    orbNotice = msg;
+    orbNoticeToken = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 6);
   }
 
   async function handleAction(action, value) {
@@ -558,6 +1052,15 @@ export function createCompanionDock({
     if (action === 'hide') return hide();
     if (action === 'toggle') return toggle();
     if (action === 'panel' || action === 'expand') return setPanel(value);
+    if (action === 'set-stage') {
+      activeStage = String(value || 'export');
+      return broadcastState();
+    }
+    if (action === 'prompt-drop') {
+      activeStage = String(value || activeStage || 'rename');
+      setNoticeOnOrb('请把需要改名或加水印的文件/文件夹，直接拖放到我身上吧~ 🐾');
+      return broadcastState();
+    }
     if (action === 'move-by') {
       if (alive(orb)) {
         autoDock = false;
@@ -571,12 +1074,19 @@ export function createCompanionDock({
     }
     if (action === 'toggle-dock') { autoDock = !autoDock; await tick(); return broadcastState(); }
     try {
-      await onAction?.(action, value);
+      const extra = await onAction?.(action, value, {
+        setPendingDrop: files => { pendingDropFiles = files || []; },
+        getPendingDrop: () => pendingDropFiles,
+        setStage: st => { activeStage = st; },
+        openPanel: () => setPanel(true),
+        notifyOrb: setNoticeOnOrb,
+      });
+      const snap = await broadcastState();
+      return extra && typeof extra === 'object' ? { ...snap, ...extra } : snap;
     } catch (error) {
       const snap = await broadcastState();
       return { ...snap, error: String(error?.message || error || '操作失败').replace(/^Error:\s*/, '') };
     }
-    return broadcastState();
   }
 
   function dispose() {

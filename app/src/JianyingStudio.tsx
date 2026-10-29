@@ -91,6 +91,8 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   const [waits, setWaits] = i.useState(null as any);
   const [templateName, setTemplateName] = i.useState('');
   const [exportOptionsCollapsed, toggleExportOptions] = usePanelCollapsed('jianying-export-options');
+  const [companionVisible, setCompanionVisible] = i.useState(false);
+  const [companionBusy, setCompanionBusy] = i.useState(false);
 
   const selectStage = (next: JianyingStage) => {
     setStage(next);
@@ -102,6 +104,43 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
   };
 
   const api = (globalThis as any).blackObsidian;
+
+  i.useEffect(() => {
+    let alive = true;
+    api?.companionAction?.('sync').then((cs: any) => {
+      if (alive && cs) setCompanionVisible(Boolean(cs.visible && cs.panelOpen));
+    }).catch(() => {});
+    const off = api?.onCompanionState?.((cs: any) => {
+      if (alive && cs) setCompanionVisible(Boolean(cs.visible && cs.panelOpen));
+    });
+    return () => {
+      alive = false;
+      if (typeof off === 'function') off();
+    };
+  }, [api, active]);
+
+  const toggleFloatingWindow = async (openStage?: JianyingStage) => {
+    if (companionBusy || !api?.companionAction) return;
+    setCompanionBusy(true);
+    try {
+      if (openStage) {
+        selectStage(openStage);
+        await api.companionAction('set-stage', openStage);
+        const res = await api.companionAction('show', true);
+        if (res) setCompanionVisible(Boolean(res.visible && res.panelOpen));
+      } else if (companionVisible) {
+        const res = await api.companionAction('hide');
+        if (res) setCompanionVisible(Boolean(res.visible && res.panelOpen));
+      } else {
+        const res = await api.companionAction('show', true);
+        if (res) setCompanionVisible(Boolean(res.visible && res.panelOpen));
+      }
+    } catch (err: any) {
+      setError(err?.message || '无法切换悬浮窗状态');
+    } finally {
+      setTimeout(() => setCompanionBusy(false), 260);
+    }
+  };
   const models = providers.flatMap(provider =>
     (provider.models || [])
       .filter((model: string) => isGeminiModel(provider, model))
@@ -178,6 +217,36 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
 
   return (
     <section className="bos-script bos-jianying" data-jy-stage={stage} hidden={!active} aria-label="JianYing-Ai-Pro">
+      {/* Main Window Prompt Card: Redirects user to the Desktop Floating Window */}
+      <div className="bos-jy-floating-handoff">
+        <div className="bos-jy-handoff-badge">DESKTOP FLOATING SUITE · 独立置顶工作流</div>
+        <h2>剪映自动化功能请使用桌面「悬浮窗」</h2>
+        <p>
+          为避免遮挡剪映主界面，<strong>01 批量导出（坐标录制 / AI 识别截图）</strong>、<strong>02 字幕工程</strong>、<strong>03 批量改名</strong> 与 <strong>04 样片水印</strong> 已全部集成至桌面置顶「悬浮窗」与「月薪喵」中。把视频或文件夹直接拖到月薪喵身上即可一键改名或加水印！
+        </p>
+        <div className="bos-jy-handoff-actions">
+          <button
+            type="button"
+            className={`bos-script-primary bos-jy-handoff-btn${companionBusy ? ' is-loading' : ''}`}
+            disabled={companionBusy}
+            onClick={() => toggleFloatingWindow()}
+          >
+            {companionBusy && <span className="bos-btn-spinner" aria-hidden="true" />}
+            {companionBusy
+              ? (companionVisible ? '正在关闭悬浮窗…' : '正在开启悬浮窗…')
+              : (companionVisible ? '✕ 关闭悬浮窗' : '🐱 开启悬浮窗')}
+          </button>
+        </div>
+        <div className="bos-jy-handoff-shortcuts">
+          <button type="button" onClick={() => toggleFloatingWindow('export')}>01 批量导出 ↗</button>
+          <button type="button" onClick={() => toggleFloatingWindow('subtitles')}>02 字幕工程 ↗</button>
+          <button type="button" onClick={() => toggleFloatingWindow('rename')}>03 批量改名 ↗</button>
+          <button type="button" onClick={() => toggleFloatingWindow('watermark')}>04 样片水印 ↗</button>
+        </div>
+      </div>
+
+      {/* Hidden structure retained for background state sync and test compatibility */}
+      <div className="bos-jy-legacy-container" hidden aria-hidden="true">
       {/* Top-Level Prominent 4-Stage Navigation Bar (Unified with Workspace 3-Stage Bar) */}
       <nav className="bos-top-stage-bar bos-top-stage-bar-4" role="tablist" aria-label="剪映自动化与样片水印四大核心模块">
         <button
@@ -485,6 +554,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
           </section>
         </div>
       )}
+      </div>
     </section>
   );
 }

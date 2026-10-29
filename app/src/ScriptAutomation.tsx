@@ -11,6 +11,7 @@ import { findSegmentJob } from '../shared/segment-shortcut.mjs';
 import { installMusicPlayback } from './music-playback.mjs';
 import { WEB_ANALYZERS, webAnalyzer, analysisName, analysisReady, openWebAnalyzer } from '../shared/script-analyzers.mjs';
 import { requestScriptAnalysis } from './AnalysisRequest.mjs';
+import { splitDramaEpisodes, extractTextFromDocxArrayBuffer } from '../shared/drama-episodes.mjs';
 import type { ModelOption, ProviderConfig, SubtitleLine, WorkspaceTab } from './types.ts';
 
 declare const i: any;
@@ -80,6 +81,13 @@ function getRuntime() {
 
 export function useScriptAutomation(providers: ProviderConfig[]) {
   providersNow = providers;
+  try {
+    if (typeof localStorage !== 'undefined' && Array.isArray(providers)) {
+      localStorage.setItem('xm.providers.cache', JSON.stringify(providers));
+    }
+  } catch {
+    /* ignore */
+  }
   const queue = getRuntime();
   const state = i.useSyncExternalStore(queue.subscribe, queue.snapshot);
   i.useEffect(() => {
@@ -141,6 +149,9 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
   const [confirm, setConfirm] = i.useState('');
   const [opened, setOpened] = i.useState('');
   const [viewMode, setViewMode] = i.useState<'script' | 'library' | 'queue'>('script');
+  const [splittingEpisodes, setSplittingEpisodes] = i.useState(false);
+  const dramaFileRef = i.useRef(null as HTMLInputElement | null);
+  const tabsScrollRef = i.useRef(null as HTMLDivElement | null);
 
   const models: ModelOption[] = providers.flatMap(provider =>
     (provider.models || []).map(model => ({
@@ -456,7 +467,17 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
             </div>
           )}
           <div className="bos-project-bar">
-            <div className="bos-project-tabs" role="tablist" aria-label="选择剧本">
+            <div
+              className="bos-project-tabs"
+              role="tablist"
+              aria-label="选择剧本或分集"
+              ref={tabsScrollRef}
+              onWheel={(e: any) => {
+                if (tabsScrollRef.current && e.deltaY !== 0) {
+                  tabsScrollRef.current.scrollLeft += e.deltaY;
+                }
+              }}
+            >
               {projects.projects.map((p: any, index: number) => (
                 <div className="bos-project-tab" key={p.id}>
                   <button
@@ -466,7 +487,7 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
                     title={p.draft.title}
                     onClick={() => projects.select(p.id)}
                   >
-                    剧本 {index + 1}
+                    {p.draft.episodeLabel || `剧本 ${index + 1}`}
                     {p.recommendation && <span aria-label="已有推荐"> ·</span>}
                   </button>
                   <button
@@ -482,6 +503,70 @@ export function ScriptAutomation({ providers, automation, onNavigate }: ScriptAu
               ))}
             </div>
             <div className="bos-project-tools">
+              <input
+                ref={dramaFileRef}
+                type="file"
+                accept=".txt,.md,.srt,.docx"
+                hidden
+                onChange={async (e: any) => {
+                  const file = e.target?.files?.[0];
+                  if (e.target) e.target.value = '';
+                  if (!file) return;
+                  setSplittingEpisodes(true);
+                  setError('');
+                  try {
+                    let rawText = '';
+                    if (/\.docx$/i.test(file.name)) {
+                      const buf = await file.arrayBuffer();
+                      rawText = await extractTextFromDocxArrayBuffer(buf);
+                    } else {
+                      rawText = await file.text();
+                    }
+                    const episodes = splitDramaEpisodes(rawText);
+                    const count = projects.importEpisodes(episodes);
+                    setMessage(`已将「${file.name}」智能切分为 ${count} 集剧本（可在左侧分集栏左右滑动切换）。`);
+                  } catch (err: any) {
+                    setError(err?.message || '剧本分集解析失败。');
+                  } finally {
+                    setSplittingEpisodes(false);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className={splittingEpisodes ? 'is-loading' : ''}
+                disabled={splittingEpisodes}
+                title="上传整部剧完整剧本 (.txt / .md / .docx)，自动按集切分为列表"
+                onClick={() => {
+                  if (dramaFileRef.current) {
+                    dramaFileRef.current.click();
+                  } else if (draft.script.trim()) {
+                    perform(() => {
+                      const episodes = splitDramaEpisodes(draft.script);
+                      const count = projects.importEpisodes(episodes);
+                      setMessage(`已将当前完整剧本切分为 ${count} 集。`);
+                    });
+                  }
+                }}
+              >
+                {splittingEpisodes && <span className="bos-btn-spinner" aria-hidden="true" />}
+                {splittingEpisodes ? '正在切分剧集…' : '📂 上传整部剧本'}
+              </button>
+              {draft.script.trim().length > 120 && splitDramaEpisodes(draft.script).length >= 2 && (
+                <button
+                  type="button"
+                  title="将当前输入框中的多集完整剧本自动按集切分"
+                  onClick={() =>
+                    perform(() => {
+                      const episodes = splitDramaEpisodes(draft.script);
+                      const count = projects.importEpisodes(episodes);
+                      setMessage(`已将当前完整剧本智能切分为 ${count} 集（可左右滑动切换）。`);
+                    })
+                  }
+                >
+                  ✂️ 按集切分 ({splitDramaEpisodes(draft.script).length}集)
+                </button>
+              )}
               <button type="button" onClick={() => perform(projects.add)}>
                 ＋ 新建剧本
               </button>

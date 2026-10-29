@@ -1,12 +1,13 @@
 import { sameLibraryRequest } from './library-search.mjs';
-export const PROJECT_LIMIT = 5;
+export const PROJECT_LIMIT = 120;
 export const HISTORY_LIMIT = 5;
 export function scriptName(script = '') {
   const first = script.split(/\r?\n/).find(line => line.trim()) || '未填写剧本';
   return first.replace(/^\[EN\]\s*/i, '').trim().slice(0, 34);
 }
 export function newProject(draft = {}) {
-  return { id: crypto.randomUUID(), draft: { script: '', customKeywords: '', durationSeconds: 90, geminiKey: '', sunoKey: '', sourceMode: 'library', subtitleLanguage: 'auto', segmented: false, segmentCount: 3, ...independentAnalysisModels(draft), hint: '', title: scriptName(draft.script) }, recommendation: null };
+  const episodeLabel = typeof draft.episodeLabel === 'string' ? draft.episodeLabel : '';
+  return { id: crypto.randomUUID(), draft: { script: '', customKeywords: '', durationSeconds: 90, geminiKey: '', sunoKey: '', sourceMode: 'library', subtitleLanguage: 'auto', segmented: false, segmentCount: 3, episodeLabel, ...independentAnalysisModels(draft), hint: '', title: draft.title || scriptName(draft.script) }, recommendation: null };
 }
 export function independentAnalysisModels(draft = {}) {
   // Copy the old shared selection once, before either selector can change it.
@@ -14,7 +15,7 @@ export function independentAnalysisModels(draft = {}) {
 }
 export function clearCurrentProject(state) {
   const current = state.projects.find(project => project.id === state.activeId) || state.projects[0];
-  const empty = newProject({ ...current.draft, script: '', hint: '', customKeywords: '' });
+  const empty = newProject({ ...current.draft, script: '', hint: '', customKeywords: '', episodeLabel: '', title: '' });
   return { ...state, activeId: empty.id, projects: state.projects.map(project => project.id === current.id ? empty : project) };
 }
 export function rememberProject(history, project, record = project.recommendation) {

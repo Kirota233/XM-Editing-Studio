@@ -12,14 +12,16 @@ export interface UpdaterState {
 
 const DEFAULT_STATE: UpdaterState = {
   status: 'idle',
-  currentVersion: '1.6.3',
-  latestVersion: '1.6.3',
+  currentVersion: '1.6.4',
+  latestVersion: '1.6.4',
   hasUpdate: false,
   progress: 0,
 };
 
 export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } = {}) {
   const [state, setState] = i.useState(DEFAULT_STATE as UpdaterState);
+  const [companionBusy, setCompanionBusy] = i.useState(false);
+  const [companionOpen, setCompanionOpen] = i.useState(false);
   const api = (globalThis as any).blackObsidian;
 
   i.useEffect(() => {
@@ -27,8 +29,14 @@ export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } 
     api?.getUpdaterStatus?.().then((s: UpdaterState) => {
       if (alive && s) setState(s);
     }).catch(() => {});
+    api?.companionAction?.('sync').then((cs: any) => {
+      if (alive && cs) setCompanionOpen(Boolean(cs.visible));
+    }).catch(() => {});
     const off = api?.onUpdaterState?.((s: UpdaterState) => {
       if (alive && s) setState(s);
+    });
+    const offComp = api?.onCompanionState?.((cs: any) => {
+      if (alive && cs) setCompanionOpen(Boolean(cs.visible));
     });
     const offNav = api?.onTrayNavigate?.((target: string) => {
       if (!alive || !target) return;
@@ -46,9 +54,23 @@ export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } 
     return () => {
       alive = false;
       if (typeof off === 'function') off();
+      if (typeof offComp === 'function') offComp();
       if (typeof offNav === 'function') offNav();
     };
   }, [onNavigate]);
+
+  const handleToggleCompanion = async () => {
+    if (companionBusy || !api?.companionAction) return;
+    setCompanionBusy(true);
+    try {
+      const res = await api.companionAction('toggle');
+      if (res) setCompanionOpen(Boolean(res.visible));
+    } catch {
+      /* ignore */
+    } finally {
+      setTimeout(() => setCompanionBusy(false), 320);
+    }
+  };
 
   const handleAction = () => {
     if (!api?.updaterAction) return;
@@ -91,11 +113,13 @@ export function TitleBar({ onNavigate }: { onNavigate?: (tab: string) => void } 
       <div className="bos-titlebar-actions">
         <button
           type="button"
-          className="bos-companion-pill"
-          onClick={() => api?.companionAction?.('toggle').catch(() => {})}
-          title="呼出或隐藏月薪喵：置顶毛玻璃剪映插件面板（可磁吸剪映窗口）"
+          className={`bos-companion-pill${companionBusy ? ' is-loading' : ''}${companionOpen ? ' is-open' : ''}`}
+          disabled={companionBusy}
+          onClick={handleToggleCompanion}
+          title="开启或关闭桌面悬浮窗（剪映自动化、字幕工程、拖放改名与样片水印）"
         >
-          🐱 月薪喵
+          {companionBusy ? <span className="bos-btn-spinner" aria-hidden="true" /> : '🐱 '}
+          {companionBusy ? '启动中…' : '悬浮窗'}
         </button>
         <button
           type="button"

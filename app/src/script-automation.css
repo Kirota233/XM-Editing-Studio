@@ -162,9 +162,43 @@
 }
 
 /* Sleek Inline PeriodKeeper Toolbar (PeriodKeeper.tsx) */
+.bos-period-keeper {
+  padding: 10px 14px !important;
+  margin: 0 0 14px !important;
+}
 .bos-period-bar {
-  padding: 10px 14px;
-  margin: 0 0 14px;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  flex-wrap: wrap !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.bos-period-meta {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex-wrap: wrap !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+.bos-period-meta #bos-period-title {
+  margin: 0 !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+}
+.bos-period-meta .bos-period-sub {
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+.bos-period-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  flex-shrink: 0 !important;
 }
 .bos-period-inline {
   display: flex;
@@ -174,10 +208,15 @@
   flex-wrap: wrap;
 }
 .bos-period-pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+  white-space: nowrap;
 }
 .bos-period-dot {
   width: 8px;
@@ -1888,7 +1927,7 @@
   grid-column: 1 / -1 !important;
 }
 
-/* In-button startup waiting spinner & loading state */
+/*In-button startup waiting spinner & loading state */
 button.is-loading {
   display: inline-flex !important;
   align-items: center !important;
@@ -1911,4 +1950,95 @@ button.is-loading {
   to {
     transform: rotate(360deg);
   }
+}
+
+/* Horizontally scrollable episode/project tabs bar without breaking layout */
+.bos-project-bar {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 12px !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden !important;
+}
+.bos-project-tabs {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex-wrap: nowrap !important;
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+.bos-project-tabs::-webkit-scrollbar {
+  height: 4px;
+}
+.bos-project-tabs::-webkit-scrollbar-thumb {
+  background: var(--ui-border, rgba(255, 255, 255, 0.2));
+  border-radius: 999px;
+}
+.bos-project-tab {
+  flex: 0 0 auto !important;
+  white-space: nowrap !important;
+}
+.bos-project-tools {
+  display: flex !important;
+  align-items: center !important;
+  gap: 7px !important;
+  flex-wrap: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+/* Main window Jianying Automation Floating Window Handoff Card */
+.bos-jy-floating-handoff {
+  padding: 32px 28px;
+  border-radius: var(--ui-radius, 18px);
+  border: 1px solid var(--ui-border, rgba(255, 255, 255, 0.12));
+  background: var(--ui-surface, rgba(18, 22, 28, 0.78));
+  box-shadow: var(--ui-shadow);
+  backdrop-filter: blur(24px) saturate(180%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+.bos-jy-handoff-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--ui-soft);
+  color: var(--ui-accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.bos-jy-floating-handoff h2 {
+  font-size: 22px !important;
+  margin: 0 !important;
+}
+.bos-jy-floating-handoff p {
+  font-size: 13px !important;
+  line-height: 1.75 !important;
+  max-width: 760px;
+  margin: 0 !important;
+}
+.bos-jy-handoff-actions {
+  margin-top: 4px;
+}
+.bos-jy-handoff-btn {
+  padding: 10px 22px !important;
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+}
+.bos-jy-handoff-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.bos-jy-legacy-container[hidden] {
+  display: none !important;
 }

@@ -2,17 +2,26 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { width: 100%; height: 100%; overflow: hidden; background: transparent !important; border: none !important; box-shadow: none !important;
     font-family: "Microsoft YaHei", "Segoe UI Variable Text", system-ui, sans-serif; color: #f5f7fa; user-select: none; }
-  button { font: inherit; cursor: pointer; }
+  button, input, select { font: inherit; }
+  button { cursor: pointer; }
 
-  .stage { position: relative; width: 200px; height: 230px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  .stage { position: relative; width: 230px; height: 256px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
     padding-bottom: 4px; cursor: pointer; background: transparent !important; border: none !important; box-shadow: none !important; -webkit-app-region: no-drag; }
   /* SpeechBubble 1:1 from sprmorn/DesktopPet-Miao (white rounded rect + 2px #FFB6C1 pink border, zero frosted border on window) */
   .bubble { position: absolute; top: 4px; left: 50%; transform: translateX(-50%) translateY(6px) scale(.92);
-    max-width: 192px; width: max-content; padding: 7px 14px; border-radius: 15px;
+    max-width: 222px; min-width: 148px; width: max-content; padding: 8px 13px; border-radius: 15px;
     background: #ffffff; border: 2px solid #FFB6C1; color: #000000;
-    font-size: 13px; font-weight: 700; line-height: 1.35; text-align: center; white-space: normal; word-break: break-word;
+    font-size: 12.5px; font-weight: 700; line-height: 1.38; text-align: center; white-space: normal; word-break: break-word;
     opacity: 0; transition: opacity .2s ease, transform .2s cubic-bezier(.34,1.56,.64,1); pointer-events: none; z-index: 10; }
   .bubble.show { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  .bubble.interactive { pointer-events: auto; cursor: default; }
+  .choice-btns { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 7px; }
+  .choice-btn { padding: 4px 10px; border-radius: 999px; border: 1.5px solid #ff8da6; background: #fff0f4; color: #b81d4e;
+    font-size: 11.5px; font-weight: 700; transition: all .15s; }
+  .choice-btn:hover { background: #ffb6c1; color: #000; transform: translateY(-1px); }
+  .choice-btn.cancel { padding: 4px 7px; border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
+  .wm-prog { margin-top: 6px; height: 7px; width: 100%; border-radius: 999px; background: #ffe4e9; overflow: hidden; }
+  .wm-prog > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #ff7aa2, #ff4d79); border-radius: 999px; transition: width .22s ease; }
   .pet-wrap { position: relative; width: 176px; height: 176px; display: flex; align-items: center; justify-content: center;
     background: transparent !important; border: none !important; box-shadow: none !important; }
   .pet-gif { width: 172px; height: 172px; object-fit: contain; background: transparent !important; border: none !important;
@@ -22,7 +31,15 @@
   @keyframes jumpJoy { 0% { transform: translateY(0) } 50% { transform: translateY(-28px) } 100% { transform: translateY(0) } }
   </style></head><body>
   <div class="stage" id="stage" data-pose="default">
-    <div class="bubble" id="bubble"></div>
+    <div class="bubble" id="bubble">
+      <div id="bubbleText"></div>
+      <div class="choice-btns" id="choiceBtns" style="display:none">
+        <button type="button" class="choice-btn" id="chooseRename">✏️ 改名</button>
+        <button type="button" class="choice-btn" id="chooseWatermark">💧 加水印</button>
+        <button type="button" class="choice-btn cancel" id="chooseCancel" title="取消">✕</button>
+      </div>
+      <div class="wm-prog" id="wmProg" style="display:none"><i id="wmProgFill"></i></div>
+    </div>
     <div class="pet-wrap" id="pet-wrap">
       <img class="pet-gif" id="pet-gif" src="/miao/default.gif" alt="月薪喵" draggable="false" />
     </div>
@@ -31,8 +48,12 @@
     const api = window.blackObsidian;
     const stage = document.getElementById('stage');
     const bubble = document.getElementById('bubble');
+    const bubbleText = document.getElementById('bubbleText');
+    const choiceBtns = document.getElementById('choiceBtns');
+    const wmProg = document.getElementById('wmProg');
+    const wmProgFill = document.getElementById('wmProgFill');
     const petGif = document.getElementById('pet-gif');
-    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default';
+    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default', choiceActive = false, lastNoticeToken = '';
 
     const GIF_MAP = {
       default: '/miao/default.gif',
@@ -45,31 +66,42 @@
     };
 
     const IDLE_POOL = [
-      { key: 'comfort', duration: 5500, lines: ['好舒服呀~ 蹭蹭~ 🥰', '剪片辛苦啦，摸摸头~', '我就静静陪着你剪片~'] },
+      { key: 'comfort', duration: 5500, lines: ['好舒服呀~ 蹭蹭~ 🥰', '剪片辛苦啦，摸摸头~', '把文件拖给我可以改名或加水印哦~'] },
       { key: 'enjoy', duration: 5500, lines: ['今天也要开心导片哦 ✨', '啦啦啦~ 爆款预定！', '有我在，标点句号绝不丢！'] },
       { key: 'play', duration: 6000, lines: ['一起来玩手机呀~ 📱', '刷会儿手机放松一下眼睛吧~'] },
       { key: 'float', duration: 6000, lines: ['我去休息一下啦~ 💤', '呼噜噜…充个电~'] },
       { key: 'cry', duration: 5000, lines: ['拍拍小肚皮~ 陪陪我好不好~', '渲染队列交给我盯紧啦~'] }
     ];
 
-    function showMessage(text, duration = 2600) {
+    function showMessage(text, duration = 3000, opts = {}) {
       if (!text) return;
-      bubble.textContent = text;
+      choiceActive = Boolean(opts.choice);
+      bubbleText.textContent = text;
+      choiceBtns.style.display = opts.choice ? 'flex' : 'none';
+      wmProg.style.display = typeof opts.progress === 'number' ? 'block' : 'none';
+      if (typeof opts.progress === 'number') {
+        wmProgFill.style.width = Math.max(2, Math.min(100, opts.progress)) + '%';
+      }
+      bubble.classList.toggle('interactive', Boolean(opts.choice));
       bubble.classList.add('show');
       clearTimeout(bubbleTimer);
-      bubbleTimer = setTimeout(() => bubble.classList.remove('show'), duration);
+      if (duration > 0 && !opts.choice) {
+        bubbleTimer = setTimeout(() => {
+          if (!choiceActive) bubble.classList.remove('show');
+        }, duration);
+      }
     }
 
-    function switchGif(key, message, duration = 5200) {
+    function switchGif(key, message, duration = 5200, opts = {}) {
       const target = GIF_MAP[key] || GIF_MAP.default;
       if (currentKey !== key) {
         currentKey = key;
         petGif.src = target;
       }
       stage.dataset.pose = key;
-      if (message) showMessage(message, Math.min(duration, 3200));
+      if (message) showMessage(message, opts.choice ? 0 : Math.min(duration, 3600), opts);
       clearTimeout(gifTimer);
-      if (key !== 'default') {
+      if (key !== 'default' && !opts.choice) {
         gifTimer = setTimeout(() => {
           currentKey = 'default';
           petGif.src = GIF_MAP.default;
@@ -78,19 +110,17 @@
       }
     }
 
-    // Time-of-day greeting (from DesktopPet-Miao pet.py)
     (function greetByTime() {
       const h = new Date().getHours();
       if (h >= 5 && h < 11) switchGif('enjoy', '早上好呀！新的一天元气满满~ ☀️', 4500);
       else if (h >= 11 && h < 14) switchGif('comfort', '中午好！记得按时吃饭休息哦~ 🍱', 4500);
-      else if (h >= 14 && h < 19) switchGif('play', '下午好！点我可展开剪映插件面板~ ✨', 4500);
-      else if (h >= 19 && h < 23) switchGif('comfort', '晚上好！今天剪片辛苦啦~ 🥰', 4500);
+      else if (h >= 14 && h < 19) switchGif('play', '下午好！点我可展开自动化悬浮窗~ ✨', 4500);
+      else if (h >= 19 && h < 23) switchGif('comfort', '晚上好！把视频拖给我可改名或加水印~ 🥰', 4500);
       else switchGif('float', '夜深了，早点休息哦~ 💤', 5500);
     })();
 
-    // Random idle animation switching
     setInterval(() => {
-      if (currentKey !== 'default') return;
+      if (currentKey !== 'default' || choiceActive) return;
       if (Math.random() < 0.6) {
         const pick = IDLE_POOL[Math.floor(Math.random() * IDLE_POOL.length)];
         const line = Math.random() < 0.55 ? pick.lines[Math.floor(Math.random() * pick.lines.length)] : '';
@@ -98,13 +128,45 @@
       }
     }, 8500);
 
+    window.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); });
+    window.addEventListener('drop', async e => {
+      e.preventDefault(); e.stopPropagation();
+      const files = Array.from(e.dataTransfer?.files || []);
+      const paths = files.map(f => f.path || f.name).filter(Boolean);
+      if (!paths.length) return;
+      const res = await api?.companionAction?.('drop-paths', paths);
+      const count = res?.droppedFilesCount || paths.length;
+      switchGif('comfort', '收到 ' + count + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+    });
+
+    document.getElementById('chooseRename').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      bubble.classList.remove('show', 'interactive');
+      api?.companionAction?.('drop-choice', 'rename');
+    };
+    document.getElementById('chooseWatermark').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      switchGif('enjoy', '正在同目录批量加水印 0%…', 10000, { progress: 2 });
+      api?.companionAction?.('drop-choice', 'watermark');
+    };
+    document.getElementById('chooseCancel').onclick = e => {
+      e.stopPropagation();
+      choiceActive = false;
+      bubble.classList.remove('show', 'interactive');
+      api?.companionAction?.('drop-choice', 'cancel');
+    };
+
     const togglePanel = () => {
+      if (choiceActive) return;
       petGif.style.transform = 'scale(0.94)';
       setTimeout(() => { petGif.style.transform = ''; }, 150);
       api?.companionAction?.('panel', 'toggle');
     };
 
-    stage.addEventListener('dblclick', () => {
+    stage.addEventListener('dblclick', e => {
+      if (e.target.closest('.choice-btns')) return;
       stage.classList.remove('jumping');
       void stage.offsetWidth;
       stage.classList.add('jumping');
@@ -113,7 +175,7 @@
 
     let down = false, dragged = false, startX = 0, startY = 0, lastX = 0, lastY = 0;
     stage.addEventListener('pointerdown', e => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || e.target.closest('.choice-btns')) return;
       down = true; dragged = false;
       startX = lastX = e.screenX;
       startY = lastY = e.screenY;
@@ -144,8 +206,20 @@
     function render(s) {
       if (!s) return;
       const wm = s.watermark || {}, jy = s.jianying || {};
-      if (wm.running) showMessage('正在批量加水印 ' + wm.overallProgress + '% 🎬', 2000);
-      else if (jy.exporting) showMessage('正在自动导出剪映视频… 🚀', 2000);
+      if (s.pendingDropCount > 0 && !wm.running) {
+        switchGif('comfort', '收到 ' + s.pendingDropCount + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+        return;
+      }
+      if (wm.running) {
+        choiceActive = false;
+        showMessage('正在加水印 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { progress: wm.overallProgress || 2 });
+      } else if (s.orbNotice && s.orbNoticeToken && s.orbNoticeToken !== lastNoticeToken) {
+        lastNoticeToken = s.orbNoticeToken;
+        choiceActive = false;
+        switchGif('enjoy', s.orbNotice, 5000);
+      } else if (jy.exporting) {
+        showMessage('正在自动导出剪映视频… 🚀', 2500);
+      }
     }
     api?.onCompanionState?.(render);
     api?.companionAction?.('sync').then(render).catch(() => {});

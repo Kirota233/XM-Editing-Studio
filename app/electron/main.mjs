@@ -1,6 +1,6 @@
 ﻿import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createDesktopServer } from "../server/desktop-server.mjs";
@@ -49,12 +49,15 @@ const watermarkHost = createWatermarkHost({
       }
     }
   },
+  onBatchComplete: state => {
+    void companionDock?.handleAction?.('wm-finished-notice', `✅ 样片加水印全部完成 (${state.completedCount} 个)！已输出至原目录 ✨`);
+  },
 });
 const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWindow, shell });
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
 const autoUpdater = createAutoUpdater({
-  currentVersion: app.getVersion() || '1.6.3',
+  currentVersion: app.getVersion() || '1.6.4',
   downloadDirectory: path.join(app.getPath('userData'), 'updates'),
   onQuit: () => app.quit(),
   notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },
@@ -323,6 +326,40 @@ if (!hasSingleInstance) {
     }
   };
 
+  const SUPPORTED_DROP_EXTS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.m4v', '.webm', '.mp3', '.wav', '.srt', '.ass']);
+  const VIDEO_ONLY_EXTS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.m4v', '.webm']);
+
+  async function expandDroppedPaths(rawPaths = []) {
+    const out = [];
+    const seen = new Set();
+    async function walk(p) {
+      if (!p || typeof p !== 'string') return;
+      const resolved = path.resolve(p);
+      if (seen.has(resolved)) return;
+      try {
+        const st = await stat(resolved);
+        if (st.isDirectory()) {
+          const entries = await readdir(resolved, { withFileTypes: true });
+          for (const entry of entries) {
+            await walk(path.join(resolved, entry.name));
+          }
+        } else if (st.isFile()) {
+          const ext = path.extname(resolved).toLowerCase();
+          if (SUPPORTED_DROP_EXTS.has(ext) && !path.basename(resolved).endsWith('样片.mp4')) {
+            seen.add(resolved);
+            out.push(resolved);
+          }
+        }
+      } catch {
+        /* ignore inaccessible path */
+      }
+    }
+    for (const item of (Array.isArray(rawPaths) ? rawPaths : [])) {
+      await walk(item);
+    }
+    return out;
+  }
+
   const setupCompanionDock = () => {
     companionDock = createCompanionDock({
       preloadPath,
@@ -331,17 +368,89 @@ if (!hasSingleInstance) {
       getJianyingState: () => jianying.run('status', {}),
       getWatermarkState: () => watermarkHost.getState(),
       getPeriodStatus: () => periodKeeper.status(),
-      onAction: async (action, value) => {
+      onAction: async (action, value, ctx) => {
         if (action === 'navigate') {
           focusAndNavigate(String(value || ''));
+        } else if (action === 'wm-finished-notice') {
+          ctx?.notifyOrb?.(String(value || '✅ 样片加水印完成！已输出至原目录 ✨'));
+        } else if (action === 'drop-paths') {
+          const expanded = await expandDroppedPaths(value);
+          if (!expanded.length) throw new Error('未在拖放内容中找到支持的视频或字幕文件。');
+          ctx?.setPendingDrop?.(expanded);
+          return { droppedFilesCount: expanded.length };
+        } else if (action === 'drop-choice') {
+          const pending = ctx?.getPendingDrop?.() || [];
+          ctx?.setPendingDrop?.([]);
+          if (value === 'cancel' || !pending.length) return;
+          if (value === 'rename') {
+            await jianying.run('files', { files: pending });
+            ctx?.setStage?.('rename');
+            await ctx?.openPanel?.();
+          } else if (value === 'watermark') {
+            const videos = pending.filter(f => VIDEO_ONLY_EXTS.has(path.extname(f).toLowerCase()));
+            if (!videos.length) throw new Error('拖入的文件中没有可加水印的视频文件。');
+            ctx?.setStage?.('watermark');
+            await watermarkHost.addVideos(videos, { sameDirectory: true });
+            await watermarkHost.startBatch({ sameDirectory: true });
+          }
+        } else if (action === 'jy-wizard') {
+          await jianying.run('wizard', {});
         } else if (action === 'jy-scan') {
-          const connection = jianying.lastConnection?.();
-          if (!connection) throw new Error('请先在主工作台「剪映自动化」选择 AI 模型并扫描一次，之后月薪喵即可独立扫描。');
+          const connection = value?.connection || jianying.lastConnection?.();
+          if (!connection) throw new Error('请先在左侧「API 与主题」配置 Gemini 模型连接。');
           await jianying.run('scan', {}, connection);
         } else if (action === 'jy-export') {
-          await jianying.run('export', { index: 0 });
+          await jianying.run('export', { index: Number(value?.index) || 0 });
+        } else if (action === 'jy-settings') {
+          await jianying.run('settings', value || {});
+        } else if (action === 'jy-select-tpl') {
+          await jianying.run('select-template', { id: String(value?.id || '') });
+        } else if (action === 'jy-paths') {
+          await jianying.run('paths', value || {});
+        } else if (action === 'jy-pick-path') {
+          const key = value === 'subtitleOutput' ? 'subtitleOutput' : 'draftDir';
+          const result = await dialog.showOpenDialog({
+            title: key === 'draftDir' ? '选择剪映草稿根目录 (JianyingPro Drafts)' : '选择 SRT 字幕导出目录',
+            properties: ['openDirectory', 'createDirectory'],
+          });
+          if (!result.canceled && result.filePaths[0]) {
+            await jianying.run('paths', { [key]: result.filePaths[0] });
+          }
         } else if (action === 'jy-extract') {
           await jianying.run('extract', {});
+        } else if (action === 'jy-fonts') {
+          await jianying.run('fonts', {});
+        } else if (action === 'jy-unhide') {
+          await jianying.run('unhide', {});
+        } else if (action === 'jy-pick-rename-dir') {
+          const result = await dialog.showOpenDialog({
+            title: '选择要批量改名的文件夹（含子文件夹）',
+            properties: ['openDirectory'],
+          });
+          if (!result.canceled && result.filePaths[0]) {
+            const expanded = await expandDroppedPaths([result.filePaths[0]]);
+            if (expanded.length) await jianying.run('files', { files: expanded });
+            return { renameFolder: result.filePaths[0] };
+          }
+        } else if (action === 'jy-pick-rename-files') {
+          const result = await dialog.showOpenDialog({
+            title: '选择要批量改名的文件',
+            properties: ['openFile', 'multiSelections'],
+            filters: [{ name: '视频、音频和字幕', extensions: ['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'srt', 'ass'] }],
+          });
+          if (!result.canceled && result.filePaths.length) {
+            await jianying.run('files', { files: result.filePaths });
+          }
+        } else if (action === 'jy-preview-rename') {
+          const connection = value?.connection || jianying.lastConnection?.();
+          await jianying.run('preview', {
+            folder: String(value?.folder || ''),
+            template: String(value?.template || '短剧名称_第1集'),
+            ai: Boolean(value?.ai),
+          }, connection);
+        } else if (action === 'jy-execute-rename') {
+          await jianying.run('rename', {});
+          ctx?.notifyOrb?.('✅ 批量改名已完成！✨');
         } else if (action === 'jy-stop') {
           await jianying.run('stop', {});
         } else if (action === 'jy-modal') {
@@ -353,10 +462,10 @@ if (!hasSingleInstance) {
             filters: [{ name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'webm'] }],
           });
           if (!result.canceled && result.filePaths.length) {
-            await watermarkHost.addVideos(result.filePaths);
+            await watermarkHost.addVideos(result.filePaths, { sameDirectory: true });
           }
         } else if (action === 'wm-start') {
-          await watermarkHost.startBatch();
+          await watermarkHost.startBatch({ sameDirectory: true });
         } else if (action === 'wm-cancel') {
           await watermarkHost.cancelBatch();
         } else if (action === 'wm-open') {
@@ -367,8 +476,10 @@ if (!hasSingleInstance) {
         } else if (action === 'launch-jy') {
           await quickLaunch.scan().catch(() => {});
           await quickLaunch.launch();
+        } else if (action === 'panel-drag') {
+          /* handled by Electron -webkit-app-region: drag or native host */
         } else {
-          throw new Error('未知的月薪喵操作。');
+          throw new Error('未知的悬浮窗操作。');
         }
       },
     });

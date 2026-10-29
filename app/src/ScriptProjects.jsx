@@ -27,7 +27,27 @@ export function useScriptProjects() {
     clearHistory() { publish({ ...state, history: [], historyRevision: (state.historyRevision || 0) + 1 }); },
     change(values) { const p = current(); const draft = { ...p.draft, ...values }; draft.title = scriptName(draft.script); publish({ ...state, projects: state.projects.map(item => item.id === p.id ? { ...item, draft } : item) }); },
     select(id) { publish({ ...state, history: saveCurrent(), activeId: id }); },
-    add() { if (state.projects.length >= PROJECT_LIMIT) throw new Error('最多同时编辑 5 份剧本。可关闭一个标签，原文和推荐会保存到最近 5 份历史中。'); const p = newProject({ ...current().draft, script: '', customKeywords: '' }); publish({ ...state, history: saveCurrent(), projects: [...state.projects, p], activeId: p.id }); },
+    add() { if (state.projects.length >= PROJECT_LIMIT) throw new Error('最多同时编辑 120 集剧本。'); const p = newProject({ ...current().draft, script: '', customKeywords: '', episodeLabel: '' }); publish({ ...state, history: saveCurrent(), projects: [...state.projects, p], activeId: p.id }); },
+    importEpisodes(episodes) {
+      if (!Array.isArray(episodes) || !episodes.length) throw new Error('未识别到可切分的剧集内容。');
+      const baseDraft = current().draft;
+      const nextProjects = episodes.slice(0, PROJECT_LIMIT).map((ep, idx) =>
+        newProject({
+          ...baseDraft,
+          script: String(ep.script || ''),
+          customKeywords: '',
+          episodeLabel: ep.episodeLabel || `第${ep.episodeNumber || idx + 1}集`,
+          title: ep.title || scriptName(ep.script),
+        })
+      );
+      publish({
+        ...state,
+        history: saveCurrent(),
+        projects: nextProjects,
+        activeId: nextProjects[0].id,
+      });
+      return nextProjects.length;
+    },
     close(id) { const p = state.projects.find(item => item.id === id); let projects = state.projects.filter(item => item.id !== id); if (!projects.length) projects = [newProject()]; publish({ ...state, history: rememberProject(state.history, p), projects, activeId: state.activeId === id ? projects[0].id : state.activeId }); },
     remember(projectId, record) {
       const project = state.projects.find(p => p.id === projectId);

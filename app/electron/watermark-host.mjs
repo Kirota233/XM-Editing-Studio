@@ -18,7 +18,7 @@ const DEFAULT_SETTINGS = {
   suffix: '样片',
 };
 
-export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange = () => {} }) {
+export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange = () => {}, onBatchComplete = () => {} }) {
   let child = null;
   let starting = null;
   let sequence = 0;
@@ -239,17 +239,18 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
     });
   }
 
-  function resolveOutputPath(inputPath) {
+  function resolveOutputPath(inputPath, sameDirectory = false) {
     const parsed = path.parse(inputPath);
-    const targetDir = settings.outputDir && settings.outputDir.trim()
+    const targetDir = (!sameDirectory && settings.outputDir && settings.outputDir.trim())
       ? settings.outputDir.trim()
       : parsed.dir;
     const suffix = (settings.suffix || '样片').trim() || '样片';
     return path.join(targetDir, `${parsed.name}${suffix}.mp4`);
   }
 
-  async function addVideos(filePaths = []) {
+  async function addVideos(filePaths = [], options = {}) {
     await loadSettings();
+    const sameDirectory = Boolean(options?.sameDirectory);
     const validPaths = Array.isArray(filePaths)
       ? filePaths.map(p => String(p || '').trim()).filter(Boolean)
       : [];
@@ -269,7 +270,8 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
         inputPath: filePath,
         fileName: path.basename(filePath),
         sizeBytes,
-        outputPath: resolveOutputPath(filePath),
+        sameDirectory,
+        outputPath: resolveOutputPath(filePath, sameDirectory),
         status: 'pending', // 'pending' | 'processing' | 'done' | 'error' | 'cancelled'
         progress: 0,
         elapsedMs: 0,
@@ -331,17 +333,19 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
     return emit();
   }
 
-  async function startBatch() {
+  async function startBatch(options = {}) {
     await loadSettings();
     if (running) return emit();
+    const forceSameDir = Boolean(options?.sameDirectory);
     const pendingJobs = jobs.filter(j => j.status === 'pending' || j.status === 'error' || j.status === 'cancelled');
     if (pendingJobs.length === 0) return emit();
 
     for (const job of pendingJobs) {
+      if (forceSameDir) job.sameDirectory = true;
       job.status = 'pending';
       job.progress = 0;
       job.error = '';
-      job.outputPath = resolveOutputPath(job.inputPath);
+      job.outputPath = resolveOutputPath(job.inputPath, Boolean(job.sameDirectory));
     }
 
     running = true;
@@ -360,7 +364,7 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
           job.status = 'processing';
           job.progress = 1;
           job.error = '';
-          job.outputPath = resolveOutputPath(job.inputPath);
+          job.outputPath = resolveOutputPath(job.inputPath, Boolean(job.sameDirectory));
           emit();
 
           try {
@@ -401,9 +405,13 @@ export function createWatermarkHost({ appDirectory, dataDirectory, onStateChange
           emit();
         }
       } finally {
+        const wasCancelled = cancelRequested;
         running = false;
         cancelRequested = false;
-        emit();
+        const finalState = emit();
+        if (!wasCancelled && finalState.completedCount > 0) {
+          try { onBatchComplete(finalState); } catch { /* ignore */ }
+        }
       }
     })();
 
