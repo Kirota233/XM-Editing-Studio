@@ -417,7 +417,10 @@ namespace XMStudioHost
         private Point _lastScreen;
         private DateTime _lastClickTime = DateTime.MinValue;
         private bool _choiceMode;
+        private bool _workingMode;
         private int _progressPercent = -1;
+        private int _stripeOffset;
+        private string _petTheme = "miao";
         private Rectangle _renameBtnRect = Rectangle.Empty;
         private Rectangle _watermarkBtnRect = Rectangle.Empty;
         private Rectangle _cancelBtnRect = Rectangle.Empty;
@@ -483,10 +486,17 @@ namespace XMStudioHost
 
         private void OnGifFrameChanged(object sender, EventArgs e) { }
 
+        public void SetPetTheme(string theme)
+        {
+            _petTheme = string.Equals(theme, "dafeyu", StringComparison.OrdinalIgnoreCase) ? "dafeyu" : "miao";
+            RenderLayered();
+        }
+
         public void ShowMessage(string text, int durationMs = 2800)
         {
             if (string.IsNullOrWhiteSpace(text)) return;
             _choiceMode = false;
+            _workingMode = false;
             _progressPercent = -1;
             _bubbleText = text;
             _bubbleUntil = DateTime.UtcNow.AddMilliseconds(durationMs);
@@ -495,8 +505,9 @@ namespace XMStudioHost
         public void ShowChoicePrompt(int count)
         {
             _choiceMode = true;
+            _workingMode = false;
             _progressPercent = -1;
-            _bubbleText = string.Format("收到 {0} 个文件，需要做什么呢？", count);
+            _bubbleText = string.Format("收到 {0} 个文件，要对这些文件做什么呢？", count);
             _bubbleUntil = DateTime.UtcNow.AddSeconds(30);
             if (_gifs.ContainsKey("comfort"))
             {
@@ -510,9 +521,25 @@ namespace XMStudioHost
         public void ShowProgress(string text, int percent)
         {
             _choiceMode = false;
-            _progressPercent = Math.Max(1, Math.Min(100, percent));
+            _workingMode = true;
+            _progressPercent = Math.Max(4, Math.Min(100, percent));
             _bubbleText = text;
-            _bubbleUntil = DateTime.UtcNow.AddSeconds(15);
+            _bubbleUntil = DateTime.UtcNow.AddSeconds(30);
+            if (_gifs.ContainsKey("play"))
+            {
+                _currentKey = "play";
+                _currentGif = _gifs["play"];
+                _poseUntil = DateTime.MaxValue;
+            }
+            RenderLayered();
+        }
+
+        public void FinishWorking(string message)
+        {
+            _workingMode = false;
+            _choiceMode = false;
+            _progressPercent = -1;
+            SwitchGif("default", string.IsNullOrWhiteSpace(message) ? "已经输出在原目录下啦 ✨" : message, 5200);
             RenderLayered();
         }
 
@@ -521,7 +548,7 @@ namespace XMStudioHost
             if (!_gifs.ContainsKey(key)) key = "default";
             _currentKey = key;
             _currentGif = _gifs.ContainsKey(key) ? _gifs[key] : null;
-            if (!string.IsNullOrEmpty(message)) ShowMessage(message, Math.Min(durationMs, 4200));
+            if (!string.IsNullOrEmpty(message)) ShowMessage(message, Math.Min(durationMs, 4800));
             _poseUntil = key == "default" ? DateTime.MaxValue : DateTime.UtcNow.AddMilliseconds(durationMs);
         }
 
@@ -537,7 +564,7 @@ namespace XMStudioHost
 
         private void TickIdleRandom()
         {
-            if (!Visible || _currentKey != "default") return;
+            if (!Visible || _currentKey != "default" || _choiceMode || _workingMode) return;
             if (_rng.NextDouble() < 0.62)
             {
                 string[] pool = new string[] { "comfort", "enjoy", "play", "float", "cry" };
@@ -558,18 +585,116 @@ namespace XMStudioHost
         private void TickFrame()
         {
             if (!Visible || IsDisposed || !IsHandleCreated) return;
-            if (_currentKey != "default" && DateTime.UtcNow >= _poseUntil)
+            if (!_workingMode && !_choiceMode && _currentKey != "default" && DateTime.UtcNow >= _poseUntil)
             {
                 _currentKey = "default";
                 if (_gifs.ContainsKey("default")) _currentGif = _gifs["default"];
             }
             _breathePhase += 0.14;
+            _stripeOffset = (_stripeOffset + 2) % 14;
             if (_jumpStep >= 0)
             {
                 _jumpStep++;
                 if (_jumpStep > 12) _jumpStep = -1;
             }
             RenderLayered();
+        }
+
+        private void DrawDafeyuMascot(Graphics g, int w, int h, int jumpOffset)
+        {
+            float bob = (float)(Math.Sin(_breathePhase * (_workingMode ? 2.4 : 1.0)) * 4.0) + jumpOffset;
+            float wag = (float)(Math.Sin(_breathePhase * (_workingMode ? 3.6 : 1.4)) * 7.0);
+            float cx = w / 2f - 6f;
+            float cy = h - 86f + bob;
+
+            // Tail fin
+            PointF[] tailPts = new PointF[]
+            {
+                new PointF(cx + 40, cy - 2),
+                new PointF(cx + 72, cy - 26 + wag),
+                new PointF(cx + 64, cy + 2 + wag * 0.5f),
+                new PointF(cx + 72, cy + 28 + wag),
+                new PointF(cx + 40, cy + 8)
+            };
+            using (LinearGradientBrush tailBrush = new LinearGradientBrush(new RectangleF(cx + 36, cy - 30, 42, 64), Color.FromArgb(110, 212, 255), Color.FromArgb(40, 105, 184), 45f))
+            {
+                g.FillClosedCurve(tailBrush, tailPts);
+            }
+
+            // Dorsal fin
+            PointF[] dorsalPts = new PointF[]
+            {
+                new PointF(cx - 10, cy - 36),
+                new PointF(cx + 4, cy - 56),
+                new PointF(cx + 24, cy - 34)
+            };
+            using (SolidBrush dorsalBrush = new SolidBrush(Color.FromArgb(92, 184, 240)))
+            {
+                g.FillClosedCurve(dorsalBrush, dorsalPts);
+            }
+
+            // Main chubby fish body
+            RectangleF bodyRect = new RectangleF(cx - 52, cy - 42, 104, 84);
+            using (LinearGradientBrush bodyBrush = new LinearGradientBrush(bodyRect, Color.FromArgb(139, 228, 255), Color.FromArgb(40, 105, 184), 65f))
+            {
+                g.FillEllipse(bodyBrush, bodyRect);
+            }
+
+            // Cream belly
+            RectangleF bellyRect = new RectangleF(cx - 44, cy - 4, 84, 42);
+            using (SolidBrush bellyBrush = new SolidBrush(Color.FromArgb(242, 250, 255)))
+            {
+                g.FillPie(bellyBrush, Rectangle.Round(bellyRect), 0, 180);
+            }
+
+            // Eye + pupil + highlight
+            g.FillEllipse(Brushes.White, cx - 34, cy - 18, 18, 20);
+            using (SolidBrush pupil = new SolidBrush(Color.FromArgb(23, 37, 84)))
+            {
+                g.FillEllipse(pupil, cx - 30, cy - 13, 11, 11);
+            }
+            g.FillEllipse(Brushes.White, cx - 28, cy - 11, 4.5f, 4.5f);
+
+            // Rosy cheek + smile
+            using (SolidBrush cheek = new SolidBrush(Color.FromArgb(165, 255, 141, 166)))
+            {
+                g.FillEllipse(cheek, cx - 40, cy + 3, 13, 7.5f);
+            }
+            using (Pen smilePen = new Pen(Color.FromArgb(30, 58, 138), 2.2f))
+            {
+                g.DrawArc(smilePen, cx - 48, cy - 4, 12, 8, 20, 140);
+            }
+
+            // Side pectoral fin
+            PointF[] sideFin = new PointF[]
+            {
+                new PointF(cx - 4, cy + 8),
+                new PointF(cx - 12, cy + 26 - wag * 0.4f),
+                new PointF(cx + 10, cy + 16)
+            };
+            using (SolidBrush finBrush = new SolidBrush(Color.FromArgb(59, 142, 214)))
+            {
+                g.FillClosedCurve(finBrush, sideFin);
+            }
+        }
+
+        private static void DrawMiniSwimmingFish(Graphics g, float x, float y)
+        {
+            // Cute mini blue/coral fish swimming right on the progress bar tip
+            using (SolidBrush body = new SolidBrush(Color.FromArgb(255, 110, 64)))
+            using (SolidBrush tail = new SolidBrush(Color.FromArgb(255, 145, 90)))
+            {
+                PointF[] tailPts = new PointF[]
+                {
+                    new PointF(x - 6, y),
+                    new PointF(x - 12, y - 5),
+                    new PointF(x - 12, y + 5)
+                };
+                g.FillPolygon(tail, tailPts);
+                g.FillEllipse(body, x - 7, y - 5, 13, 10);
+                g.FillEllipse(Brushes.White, x + 1.5f, y - 2.5f, 3.2f, 3.2f);
+                g.FillEllipse(Brushes.Black, x + 2.5f, y - 1.8f, 1.8f, 1.8f);
+            }
         }
 
         private void RenderLayered()
@@ -584,18 +709,23 @@ namespace XMStudioHost
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-                if (_currentGif != null)
+                int jumpOffset = 0;
+                if (_jumpStep >= 0 && _jumpStep <= 12)
+                {
+                    double t = _jumpStep / 12.0;
+                    jumpOffset = -(int)Math.Round(Math.Sin(t * Math.PI) * 28.0);
+                }
+
+                if (_petTheme == "dafeyu")
+                {
+                    DrawDafeyuMascot(g, w, h, jumpOffset);
+                }
+                else if (_currentGif != null)
                 {
                     try { ImageAnimator.UpdateFrames(_currentGif); } catch { }
                     int baseSize = 172;
                     int breatheDelta = _currentKey == "default" ? (int)Math.Round(Math.Sin(_breathePhase) * 2.5) : 0;
                     int drawSize = baseSize + breatheDelta;
-                    int jumpOffset = 0;
-                    if (_jumpStep >= 0 && _jumpStep <= 12)
-                    {
-                        double t = _jumpStep / 12.0;
-                        jumpOffset = -(int)Math.Round(Math.Sin(t * Math.PI) * 28.0);
-                    }
                     int gx = (w - drawSize) / 2;
                     int gy = h - drawSize - 4 + jumpOffset;
                     g.DrawImage(_currentGif, new Rectangle(gx, gy, drawSize, drawSize));
@@ -659,15 +789,26 @@ namespace XMStudioHost
                             }
                             else if (_progressPercent >= 0)
                             {
-                                Rectangle barBg = new Rectangle(bx + 12, by + textH + 9, bw - 24, 7);
-                                int fillW = Math.Max(4, (int)Math.Round((barBg.Width) * (_progressPercent / 100.0)));
+                                Rectangle barBg = new Rectangle(bx + 12, by + textH + 8, bw - 24, 9);
+                                int fillW = Math.Max(8, (int)Math.Round(barBg.Width * (_progressPercent / 100.0)));
                                 Rectangle barFg = new Rectangle(barBg.X, barBg.Y, Math.Min(barBg.Width, fillW), barBg.Height);
-                                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(255, 228, 233)))
+                                using (SolidBrush bgBrush = new SolidBrush(Color.FromArgb(255, 228, 236)))
                                 using (SolidBrush fgBrush = new SolidBrush(Color.FromArgb(255, 92, 138)))
+                                using (Pen stripePen = new Pen(Color.FromArgb(115, 255, 255, 255), 3.2f))
                                 {
                                     g.FillRectangle(bgBrush, barBg);
                                     g.FillRectangle(fgBrush, barFg);
+                                    GraphicsState st = g.Save();
+                                    g.SetClip(barFg);
+                                    for (int sx = barBg.X - 18 + _stripeOffset; sx < barFg.Right + 14; sx += 12)
+                                    {
+                                        g.DrawLine(stripePen, sx, barBg.Bottom + 2, sx + 10, barBg.Top - 2);
+                                    }
+                                    g.Restore(st);
                                 }
+                                float fishX = Math.Max(barBg.X + 8, Math.Min(barBg.Right - 4, barFg.Right));
+                                float fishY = barBg.Y + 4.5f + (float)(Math.Sin(_breathePhase * 2.2) * 1.6);
+                                DrawMiniSwimmingFish(g, fishX, fishY);
                             }
                         }
                     }
@@ -759,7 +900,7 @@ namespace XMStudioHost
                 if (_watermarkBtnRect.Contains(pt))
                 {
                     _choiceMode = false;
-                    ShowProgress("正在同目录加水印 1%…", 2);
+                    ShowProgress("努力加样片水印中 0%…", 4);
                     if (OnDropChoice != null) OnDropChoice("watermark");
                     return;
                 }
@@ -1390,7 +1531,7 @@ namespace XMStudioHost
 
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.4";
+        public const string CurrentVersion = "1.6.5";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -1412,8 +1553,12 @@ namespace XMStudioHost
         private bool _companionVisible = false;
         private bool _panelOpen = false;
         private bool _autoDock = true;
+        private bool _quitting = false;
         private string _activeCompanionStage = "export";
+        private string _forceStageToken = "";
+        private string _petTheme = "miao";
         private readonly List<string> _pendingDropFiles = new List<string>();
+        private readonly List<string> _renameFiles = new List<string>();
         private string _orbNotice = "";
         private string _orbNoticeToken = "";
 
@@ -1512,6 +1657,22 @@ namespace XMStudioHost
                         SendEventToMain("bos:jianying-state", _lastJianyingState);
                         BroadcastCompanionState();
                     }
+                    else if (evName == "scan-capture" && ev.ContainsKey("id"))
+                    {
+                        var unused = _jianyingRpc.CallAsync(new Dictionary<string, object>
+                        {
+                            { "action", "scan_capture_ready" },
+                            { "args", new Dictionary<string, object> { { "id", ev["id"] }, { "error", "" } } }
+                        });
+                    }
+                    else if (evName == "recording-capture" && ev.ContainsKey("id") && ev.ContainsKey("token"))
+                    {
+                        var unused = _jianyingRpc.CallAsync(new Dictionary<string, object>
+                        {
+                            { "action", "recording_capture_ready" },
+                            { "args", new Dictionary<string, object> { { "id", ev["id"] }, { "token", ev["token"] }, { "error", "" } } }
+                        });
+                    }
                     else if (evName == "ai" || evName == "ai_request")
                     {
                         SendEventToMain("bos:jianying-ai-request", ev);
@@ -1609,6 +1770,12 @@ namespace XMStudioHost
 
             _mainForm.FormClosing += (s, e) =>
             {
+                if (!_quitting && _companionVisible && _tray != null)
+                {
+                    e.Cancel = true;
+                    _mainForm.Hide();
+                    return;
+                }
                 DisposeAll();
             };
 
@@ -1782,7 +1949,14 @@ namespace XMStudioHost
                 case "jianying-action":
                     return await HandleJianyingActionAsync(payload);
                 case "jianying-ai-reply":
-                    if (_jianyingRpc != null) _jianyingRpc.WriteRaw(payload);
+                    if (_jianyingRpc != null)
+                    {
+                        var unused = _jianyingRpc.CallAsync(new Dictionary<string, object>
+                        {
+                            { "action", "ai_result" },
+                            { "args", payload }
+                        });
+                    }
                     return new Dictionary<string, object> { { "ok", true } };
                 case "jianying-files":
                     return ChooseJianyingFiles();
@@ -2217,21 +2391,18 @@ namespace XMStudioHost
 
                         try
                         {
-                            string mode = Convert.ToString(_wmSettings["mode"]);
-                            string wmImage = mode == "image" ? Convert.ToString(_wmSettings["watermarkImage"]) : "";
-                            if (mode == "image" && string.IsNullOrEmpty(wmImage)) wmImage = "builtin";
                             var res = await _watermarkRpc.CallAsync(new Dictionary<string, object>
                             {
                                 { "action", "process" },
                                 { "input", job["inputPath"] },
                                 { "output", job["outputPath"] },
-                                { "watermarkImage", wmImage },
-                                { "watermarkText", _wmSettings["watermarkText"] },
-                                { "position", _wmSettings["position"] },
-                                { "opacity", _wmSettings["opacity"] },
-                                { "scale", _wmSettings["scale"] },
-                                { "size", _wmSettings["size"] },
-                                { "crf", _wmSettings["crf"] }
+                                { "watermarkImage", "builtin" },
+                                { "watermarkText", "" },
+                                { "position", "fullscreen" },
+                                { "opacity", 1.0 },
+                                { "scale", 1.0 },
+                                { "size", "original" },
+                                { "crf", 23 }
                             });
                             job["status"] = "done";
                             job["progress"] = 100;
@@ -2252,7 +2423,16 @@ namespace XMStudioHost
                     _wmRunning = false;
                     if (!wasCancel && doneCount > 0)
                     {
-                        NotifyOrbMessage(string.Format("✅ 样片加水印全部完成 ({0} 个)！已输出至原目录 ✨", doneCount));
+                        _orbNotice = "已经输出在原目录下啦 ✨";
+                        _orbNoticeToken = DateTime.UtcNow.Ticks.ToString();
+                        if (_mainForm != null && !_mainForm.IsDisposed)
+                        {
+                            _mainForm.BeginInvoke(new Action(() =>
+                            {
+                                if (_orbForm != null && !_orbForm.IsDisposed)
+                                    _orbForm.FinishWorking("已经输出在原目录下啦 ✨");
+                            }));
+                        }
                     }
                     BroadcastWatermarkState();
                 }
@@ -2608,6 +2788,17 @@ namespace XMStudioHost
                 _activeCompanionStage = Convert.ToString(value ?? "export");
                 return BroadcastCompanionState();
             }
+            if (action == "toggle-pet-theme")
+            {
+                _petTheme = _petTheme == "dafeyu" ? "miao" : "dafeyu";
+                _mainForm.BeginInvoke(new Action(() =>
+                {
+                    if (_orbForm != null && !_orbForm.IsDisposed)
+                        _orbForm.SetPetTheme(_petTheme);
+                }));
+                NotifyOrbMessage(_petTheme == "dafeyu" ? "🐟 已切换为「大肥鱼」主题~" : "🐱 已切换回「月薪喵」主题~");
+                return BroadcastCompanionState();
+            }
             if (action == "prompt-drop")
             {
                 _activeCompanionStage = Convert.ToString(value ?? _activeCompanionStage);
@@ -2643,12 +2834,24 @@ namespace XMStudioHost
                 if (choice == "cancel" || files.Length == 0) return BroadcastCompanionState();
                 if (choice == "rename")
                 {
+                    _renameFiles.Clear();
+                    _renameFiles.AddRange(files);
                     _activeCompanionStage = "rename";
+                    _forceStageToken = DateTime.UtcNow.Ticks.ToString();
                     await HandleJianyingActionAsync(new Dictionary<string, object>
                     {
                         { "action", "files" },
                         { "args", new Dictionary<string, object> { { "files", files } } }
                     });
+                    try
+                    {
+                        await HandleJianyingActionAsync(new Dictionary<string, object>
+                        {
+                            { "action", "preview" },
+                            { "args", new Dictionary<string, object> { { "folder", "" }, { "template", "短剧名称_第1集" }, { "ai", false } } }
+                        });
+                    }
+                    catch { }
                     return await ShowCompanionAsync(true);
                 }
                 if (choice == "watermark")
@@ -2763,11 +2966,22 @@ namespace XMStudioHost
                     var expanded = ExpandDroppedPaths(new string[] { dir });
                     if (expanded.Count > 0)
                     {
+                        _renameFiles.Clear();
+                        _renameFiles.AddRange(expanded);
                         await HandleJianyingActionAsync(new Dictionary<string, object>
                         {
                             { "action", "files" },
                             { "args", new Dictionary<string, object> { { "files", expanded.ToArray() } } }
                         });
+                        try
+                        {
+                            await HandleJianyingActionAsync(new Dictionary<string, object>
+                            {
+                                { "action", "preview" },
+                                { "args", new Dictionary<string, object> { { "folder", "" }, { "template", "短剧名称_第1集" }, { "ai", false } } }
+                            });
+                        }
+                        catch { }
                     }
                     var st = BroadcastCompanionState();
                     st["renameFolder"] = dir;
@@ -2780,11 +2994,22 @@ namespace XMStudioHost
                 string[] files = ChooseJianyingFiles();
                 if (files != null && files.Length > 0)
                 {
+                    _renameFiles.Clear();
+                    _renameFiles.AddRange(files);
                     await HandleJianyingActionAsync(new Dictionary<string, object>
                     {
                         { "action", "files" },
                         { "args", new Dictionary<string, object> { { "files", files } } }
                     });
+                    try
+                    {
+                        await HandleJianyingActionAsync(new Dictionary<string, object>
+                        {
+                            { "action", "preview" },
+                            { "args", new Dictionary<string, object> { { "folder", "" }, { "template", "短剧名称_第1集" }, { "ai", false } } }
+                        });
+                    }
+                    catch { }
                 }
                 return BroadcastCompanionState();
             }
@@ -2851,7 +3076,10 @@ namespace XMStudioHost
                 { "autoDock", _autoDock },
                 { "acrylic", true },
                 { "activeStage", _activeCompanionStage },
+                { "forceStageToken", _forceStageToken },
+                { "petTheme", _petTheme },
                 { "pendingDropCount", _pendingDropFiles.Count },
+                { "renameFiles", _renameFiles.ToArray() },
                 { "orbNotice", _orbNotice },
                 { "orbNoticeToken", _orbNoticeToken },
                 { "jianyingFound", jyFound },
@@ -3070,6 +3298,7 @@ namespace XMStudioHost
             string installer = Convert.ToString(_updaterState["installerPath"]);
             if (!string.IsNullOrEmpty(installer) && File.Exists(installer))
             {
+                _quitting = true;
                 Process.Start(new ProcessStartInfo(installer) { UseShellExecute = true });
                 _mainForm.BeginInvoke(new Action(() => _mainForm.Close()));
             }
@@ -3081,12 +3310,12 @@ namespace XMStudioHost
         {
             var menu = new ContextMenuStrip();
             menu.Items.Add("打开 XM剪辑台", null, (s, e) => { _mainForm.Show(); _mainForm.Activate(); });
-            menu.Items.Add("召唤/隐藏 月薪喵（剪映插件）", null, async (s, e) => await HandleCompanionActionAsync("toggle", null));
+            menu.Items.Add("召唤/隐藏 悬浮窗", null, async (s, e) => await HandleCompanionActionAsync("toggle", null));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("剪映自动化与样片水印", null, (s, e) => { _mainForm.Show(); _mainForm.Activate(); SendEventToMain("bos:tray-navigate", "jianying"); });
             menu.Items.Add("文案拆解与智能配乐", null, (s, e) => { _mainForm.Show(); _mainForm.Activate(); SendEventToMain("bos:tray-navigate", "workspace"); });
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出 XM剪辑台", null, (s, e) => _mainForm.Close());
+            menu.Items.Add("彻底退出 XM剪辑台", null, (s, e) => { _quitting = true; _mainForm.Close(); });
 
             _tray = new NotifyIcon
             {

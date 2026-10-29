@@ -12,6 +12,7 @@ import { createPeriodKeeper } from './period-keeper.mjs';
 import { createMusicDrag } from './music-drag.mjs';
 import { createWatermarkHost } from './watermark-host.mjs';
 import { createJianyingHost } from './jianying-host.mjs';
+import { createJianyingWebScan } from './jianying-web-scan.mjs';
 import { createQuickLaunch } from './quick-launch.mjs';
 import { createWebAIHost } from './web-ai-host.mjs';
 import { webAIScriptPrompt } from '../shared/web-ai-prompts.mjs';
@@ -49,15 +50,16 @@ const watermarkHost = createWatermarkHost({
       }
     }
   },
-  onBatchComplete: state => {
-    void companionDock?.handleAction?.('wm-finished-notice', `✅ 样片加水印全部完成 (${state.completedCount} 个)！已输出至原目录 ✨`);
+  onBatchComplete: () => {
+    void companionDock?.handleAction?.('wm-finished-notice', '已经输出在原目录下啦 ✨');
   },
 });
 const webAI = createWebAIHost({ View: WebContentsView, getWindow: () => mainWindow, shell });
 const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeeper.copyPlain(text), notify: task => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:web-analysis-task', task); } });
-const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize() });
+const webScan = createJianyingWebScan({ BrowserWindow });
+const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize(), webScan });
 const autoUpdater = createAutoUpdater({
-  currentVersion: app.getVersion() || '1.6.4',
+  currentVersion: app.getVersion() || '1.6.5',
   downloadDirectory: path.join(app.getPath('userData'), 'updates'),
   onQuit: () => app.quit(),
   notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },
@@ -305,7 +307,14 @@ if (!hasSingleInstance) {
       if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
       return { action: "deny" };
     });
-    mainWindow.on('close', () => webAI.layout({ visible: false }));
+    mainWindow.on('close', event => {
+      webAI.layout({ visible: false });
+      if (!toolsStopped && systemTray && !systemTray.isDestroyed()) {
+        event.preventDefault();
+        mainWindow.hide();
+        void companionDock?.show?.(false);
+      }
+    });
     mainWindow.on('minimize', () => {
       void companionDock?.show?.(false);
     });
@@ -372,7 +381,7 @@ if (!hasSingleInstance) {
         if (action === 'navigate') {
           focusAndNavigate(String(value || ''));
         } else if (action === 'wm-finished-notice') {
-          ctx?.notifyOrb?.(String(value || '✅ 样片加水印完成！已输出至原目录 ✨'));
+          ctx?.notifyOrb?.(String(value || '已经输出在原目录下啦 ✨'));
         } else if (action === 'drop-paths') {
           const expanded = await expandDroppedPaths(value);
           if (!expanded.length) throw new Error('未在拖放内容中找到支持的视频或字幕文件。');
@@ -383,13 +392,15 @@ if (!hasSingleInstance) {
           ctx?.setPendingDrop?.([]);
           if (value === 'cancel' || !pending.length) return;
           if (value === 'rename') {
+            ctx?.setRenameFiles?.(pending);
             await jianying.run('files', { files: pending });
-            ctx?.setStage?.('rename');
+            await jianying.run('preview', { folder: '', template: '短剧名称_第1集', ai: false }).catch(() => {});
+            ctx?.setStage?.('rename', true);
             await ctx?.openPanel?.();
           } else if (value === 'watermark') {
             const videos = pending.filter(f => VIDEO_ONLY_EXTS.has(path.extname(f).toLowerCase()));
             if (!videos.length) throw new Error('拖入的文件中没有可加水印的视频文件。');
-            ctx?.setStage?.('watermark');
+            ctx?.setStage?.('watermark', false);
             await watermarkHost.addVideos(videos, { sameDirectory: true });
             await watermarkHost.startBatch({ sameDirectory: true });
           }
@@ -429,7 +440,11 @@ if (!hasSingleInstance) {
           });
           if (!result.canceled && result.filePaths[0]) {
             const expanded = await expandDroppedPaths([result.filePaths[0]]);
-            if (expanded.length) await jianying.run('files', { files: expanded });
+            if (expanded.length) {
+              ctx?.setRenameFiles?.(expanded);
+              await jianying.run('files', { files: expanded });
+              await jianying.run('preview', { folder: '', template: '短剧名称_第1集', ai: false }).catch(() => {});
+            }
             return { renameFolder: result.filePaths[0] };
           }
         } else if (action === 'jy-pick-rename-files') {
@@ -439,7 +454,9 @@ if (!hasSingleInstance) {
             filters: [{ name: '视频、音频和字幕', extensions: ['mp4', 'mov', 'avi', 'mkv', 'mp3', 'wav', 'srt', 'ass'] }],
           });
           if (!result.canceled && result.filePaths.length) {
+            ctx?.setRenameFiles?.(result.filePaths);
             await jianying.run('files', { files: result.filePaths });
+            await jianying.run('preview', { folder: '', template: '短剧名称_第1集', ai: false }).catch(() => {});
           }
         } else if (action === 'jy-preview-rename') {
           const connection = value?.connection || jianying.lastConnection?.();
@@ -501,10 +518,11 @@ if (!hasSingleInstance) {
         { label: "剪贴板句号守护", click: () => focusAndNavigate("period") },
         { type: "separator" },
         { label: "检查版本更新", click: () => { focusAndNavigate(""); void autoUpdater.check?.(); } },
-        { label: "退出 XM剪辑台", click: () => app.quit() },
+        { label: "彻底退出 XM剪辑台", click: () => { toolsStopped = true; app.quit(); } },
       ]);
       systemTray.setContextMenu(menu);
       systemTray.on("click", () => focusAndNavigate(""));
+      systemTray.on("double-click", () => focusAndNavigate(""));
     } catch {
       /* ignore tray errors in headless environments */
     }

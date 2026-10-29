@@ -32,7 +32,31 @@ replaceOnce('Ys.createRoot(document.getElementById("root"))', 'function z3(props
 replaceOnce('最近使用的模型、对话和音乐创作都在这里继续。', '自动提取对白字幕、匹配本地曲库与管理 Suno 异步配乐队列。');
 code = code.replace('if(!w.preview)throw new Error', 'if(!w.preview&&!w.ok)throw new Error');
 code = code.replace('title:"让灵感发出声音",description:"选择已接入的音乐生成模型，描述你想听到的场景与情绪，直接通过中转站发起创作。"', 'title:"灵感编曲室",description:"定制流派质感与段落起承转合，一键合成完整配乐。"');
-code = code.replace('{value:"custom",label:"自定义（OpenAI 兼容）"}],v3={openai:[],anthropic:[],gemini:[],custom:[]}', '{value:"custom",label:"自定义（OpenAI 兼容）"},{value:"suno",label:"Suno 异步音乐"}],v3={openai:[],anthropic:[],gemini:[],custom:[],suno:[]}');
+code = code.replace('{value:"gemini",label:"Gemini Generative"},{value:"custom",label:"自定义（OpenAI 兼容）"}],v3={openai:[],anthropic:[],gemini:[],custom:[]}', '{value:"gemini",label:"Gemini AI Studio（官方免填地址）"},{value:"custom",label:"自定义（OpenAI 兼容）"},{value:"suno",label:"Suno 异步音乐"}],v3={openai:[],anthropic:[],gemini:["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash"],custom:[],suno:[]}');
+replaceOnce(
+  'return T}function A3(){',
+  'if(!T.some(U=>U&&(U.id==="gemini-ai-studio"||U.protocol==="gemini")))T.unshift({id:"gemini-ai-studio",name:"Gemini AI Studio",description:"Google AI Studio 官方直连 · 无需填写 Base URL，直接填入 API Key 即可",protocol:"gemini",baseUrl:"https://generativelanguage.googleapis.com/v1beta",apiKey:"",models:["gemini-2.5-flash","gemini-2.5-pro"]});return T}function A3(){'
+);
+replaceOnce(
+  's.jsxs("label",{className:"field-group",children:[s.jsx("span",{children:"Base URL"}),s.jsx("input",{"aria-label":`${d.name} Base URL`,value:d.baseUrl,onChange:q=>T({baseUrl:q.target.value}),spellCheck:"false",placeholder:"https://your-gateway.example/v1"})]})',
+  'd.protocol!=="gemini"&&s.jsxs("label",{className:"field-group",children:[s.jsx("span",{children:"Base URL"}),s.jsx("input",{"aria-label":`${d.name} Base URL`,value:d.baseUrl,onChange:q=>T({baseUrl:q.target.value}),spellCheck:"false",placeholder:"https://your-gateway.example/v1"})]})'
+);
+replaceOnce(
+  'disabled:j||!X||!((Il=d.baseUrl)!=null&&Il.trim())||!((Bl=d.apiKey)!=null&&Bl.trim())',
+  'disabled:j||!X||(d.protocol!=="gemini"&&!((Il=d.baseUrl)!=null&&Il.trim()))||!((Bl=d.apiKey)!=null&&Bl.trim())'
+);
+replaceOnce(
+  'const dl=v.trim()||"自定义中转站";T({id:`provider-${Date.now()}`,name:dl,description:"自定义服务 · 独立协议配置",protocol:U,baseUrl:Y.trim(),',
+  'const dl=v.trim()||(U==="gemini"?"Gemini AI Studio":"自定义中转站");T({id:`provider-${Date.now()}`,name:dl,description:U==="gemini"?"Google AI Studio 官方直连 · 免填 Base URL":"自定义服务 · 独立协议配置",protocol:U,baseUrl:U==="gemini"?(Y.trim()||"https://generativelanguage.googleapis.com/v1beta"):Y.trim(),'
+);
+replaceOnce(
+  's.jsxs("label",{children:["Base URL",s.jsx("input",{required:!0,value:Y,onChange:W=>_(W.target.value),placeholder:U==="anthropic"?"https://api.anthropic.com/v1":U==="gemini"?"https://generativelanguage.googleapis.com/v1beta":"https://api.openai.com/v1"})]})',
+  'U!=="gemini"&&s.jsxs("label",{children:["Base URL",s.jsx("input",{required:!0,value:Y,onChange:W=>_(W.target.value),placeholder:U==="anthropic"?"https://api.anthropic.com/v1":U==="gemini"?"https://generativelanguage.googleapis.com/v1beta":"https://api.openai.com/v1"})]})'
+);
+replaceOnce(
+  'window.localStorage.setItem(u6,JSON.stringify(x))',
+  'window.localStorage.setItem(u6,JSON.stringify(x));window.localStorage.setItem("xm.providers.cache",JSON.stringify(x))'
+);
 code = code.replaceAll('黑曜信号台', 'XM剪辑台');
 fs.writeFileSync(path.join(root, 'dist/client/assets/music-studio.js'), code);
 // Replace the original decorative rail with functional local shortcuts.

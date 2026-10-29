@@ -2,7 +2,9 @@ import { normalizeMusicOptions, buildSunoBody } from '../shared/music-options.mj
 import { getSunoSongs } from './suno-response.mjs';
 import { isGeminiModel, scoreMessages, parseScoreResponse, validateScoreRequest } from '../shared/script-score.mjs';
 import { validateLibraryInput, keywordMessages, parseKeywords, shortlistTracks, matchMessages, parseMatches } from '../shared/library-match.mjs';
-import { segmentMessages, parseSegments, segmentCandidates, segmentMatchMessages, parseSegmentMatches } from '../shared/script-segments.mjs';
+import { segmentMessages, segmentRetryMessages, parseSegments, segmentCandidates, segmentMatchMessages, parseSegmentMatches } from '../shared/script-segments.mjs';
+
+const DEFAULT_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta";
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
@@ -88,6 +90,9 @@ function validateProvider(provider, model, allowSuno = false) {
   }
   if (provider.protocol === "suno" && !allowSuno) {
     throw Object.assign(new Error("Suno 是音乐生成协议，请在音乐工作台中使用。"), { status: 400 });
+  }
+  if (provider.protocol === "gemini" && (!provider.baseUrl || !String(provider.baseUrl).trim())) {
+    provider.baseUrl = DEFAULT_GEMINI_BASE_URL;
   }
   normalizeBaseUrl(provider.baseUrl);
 }
@@ -511,7 +516,14 @@ export async function handleApi(req, res) {
     const input = validateLibraryInput(body);
     if (input.segmented) {
       const planned = await requestProvider(body.provider, body.model, segmentMessages(input, 'library'), 120_000);
-      const candidates = segmentCandidates(input, parseSegments(planned.text, input, 'library'));
+      let parsedSegments;
+      try {
+        parsedSegments = parseSegments(planned.text, input, 'library');
+      } catch (err) {
+        const retried = await requestProvider(body.provider, body.model, segmentRetryMessages(input, 'library', planned.text, err?.message), 120_000);
+        parsedSegments = parseSegments(retried.text, input, 'library');
+      }
+      const candidates = segmentCandidates(input, parsedSegments);
       let segments;
       if (candidates.some(segment => segment.candidates.length)) {
         const matched = await requestProvider(body.provider, body.model, segmentMatchMessages(input, candidates), 120_000);
@@ -535,7 +547,12 @@ export async function handleApi(req, res) {
     const input = validateScoreRequest(body);
     if (input.segmented) {
       const result = await requestProvider(body.provider, body.model, segmentMessages(input, 'suno'), 120_000);
-      return json(res, 200, { segments: parseSegments(result.text, input, 'suno') });
+      try {
+        return json(res, 200, { segments: parseSegments(result.text, input, 'suno') });
+      } catch (err) {
+        const retried = await requestProvider(body.provider, body.model, segmentRetryMessages(input, 'suno', result.text, err?.message), 120_000);
+        return json(res, 200, { segments: parseSegments(retried.text, input, 'suno') });
+      }
     }
     const result = await requestProvider(body.provider, body.model, scoreMessages(input), 120_000);
     return json(res, 200, { score: parseScoreResponse(result.text, input.durationSeconds) });

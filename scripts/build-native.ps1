@@ -34,11 +34,14 @@ try {
     New-Item -ItemType Directory -Path $engineOutDir -Force | Out-Null
     $engineExe = Join-Path $engineOutDir 'JianYingEngine.exe'
     $engineSource = Join-Path $repoRoot 'app/native/JianYingEngine.cs'
+    $engineScan = Join-Path $repoRoot 'app/native/JianYingScan.cs'
+    $engineProgress = Join-Path $repoRoot 'app/native/JianYingProgress.cs'
+    $engineDraftIo = Join-Path $repoRoot 'app/native/JianYingDraftIO.cs'
     & $compiler /nologo /utf8output /codepage:65001 /target:exe /platform:x64 /optimize+ `
         /r:System.Web.Extensions.dll `
         /r:System.Drawing.dll `
         /r:System.Windows.Forms.dll `
-        ('/out:' + $engineExe) $engineSource
+        ('/out:' + $engineExe) $engineSource $engineScan $engineProgress $engineDraftIo
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $engineExe)) {
         throw 'JianYingEngine C# compilation failed.'
     }

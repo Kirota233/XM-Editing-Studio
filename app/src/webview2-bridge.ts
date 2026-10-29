@@ -2,8 +2,8 @@ import { normalizeMusicOptions, buildSunoBody } from '../shared/music-options.mj
 import { getSunoSongs } from '../server/suno-response.mjs';
 import { isGeminiModel, scoreMessages, parseScoreResponse, validateScoreRequest, materialTexts } from '../shared/script-score.mjs';
 import { validateLibraryInput, keywordMessages, parseKeywords, shortlistTracks, matchMessages, parseMatches } from '../shared/library-match.mjs';
-import { segmentMessages, parseSegments, segmentCandidates, segmentMatchMessages, parseSegmentMatches } from '../shared/script-segments.mjs';
-import { buildJianyingAIRequest } from '../electron/jianying-ai.mjs';
+import { segmentMessages, segmentRetryMessages, parseSegments, segmentCandidates, segmentMatchMessages, parseSegmentMatches } from '../shared/script-segments.mjs';
+import { buildJianyingAIRequest, DEFAULT_GEMINI_BASE_URL } from '../electron/jianying-ai.mjs';
 import { webAIScriptPrompt } from '../shared/web-ai-prompts.mjs';
 import { webAIPageScript } from '../electron/web-ai-dom.mjs';
 import { normalizeSubtitlePunctuation } from '../shared/period-text.mjs';
@@ -137,8 +137,11 @@ if (wv && !window.blackObsidian) {
   }
   function buildProviderRequest(provider: any, model: string, messages: any[]) {
     const protocol = provider.protocol || 'openai';
+    const rawBaseUrl = protocol === 'gemini' && (!provider.baseUrl || !String(provider.baseUrl).trim())
+      ? DEFAULT_GEMINI_BASE_URL
+      : provider.baseUrl;
     const url = endpointUrl(
-      provider.baseUrl,
+      rawBaseUrl,
       protocol === 'anthropic' ? '/messages' : protocol === 'gemini' ? `/models/${encodeURIComponent(model)}:generateContent` : '/chat/completions'
     );
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -212,7 +215,12 @@ if (wv && !window.blackObsidian) {
       const input = validateScoreRequest(body);
       if (input.segmented) {
         const result = await requestProvider(body.provider, body.model, segmentMessages(input, 'suno'));
-        return { segments: parseSegments(result.text, input, 'suno') };
+        try {
+          return { segments: parseSegments(result.text, input, 'suno') };
+        } catch (err: any) {
+          const retried = await requestProvider(body.provider, body.model, segmentRetryMessages(input, 'suno', result.text, err?.message));
+          return { segments: parseSegments(retried.text, input, 'suno') };
+        }
       }
       const result = await requestProvider(body.provider, body.model, scoreMessages(input));
       return { score: parseScoreResponse(result.text, input.durationSeconds) };
@@ -221,7 +229,14 @@ if (wv && !window.blackObsidian) {
       const input = validateLibraryInput(body);
       if (input.segmented) {
         const planned = await requestProvider(body.provider, body.model, segmentMessages(input, 'library'));
-        const candidates = segmentCandidates(input, parseSegments(planned.text, input, 'library'));
+        let parsedSegments;
+        try {
+          parsedSegments = parseSegments(planned.text, input, 'library');
+        } catch (err: any) {
+          const retried = await requestProvider(body.provider, body.model, segmentRetryMessages(input, 'library', planned.text, err?.message));
+          parsedSegments = parseSegments(retried.text, input, 'library');
+        }
+        const candidates = segmentCandidates(input, parsedSegments);
         let segments;
         if (candidates.some((s: any) => s.candidates.length)) {
           const matched = await requestProvider(body.provider, body.model, segmentMatchMessages(input, candidates));

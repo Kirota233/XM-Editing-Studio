@@ -102,7 +102,7 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
     assert.match(creditsText, new RegExp(name));
   }
   const titleBar = ui.TitleBar();
-  assert.match(textOf(titleBar), /v1\.6\.4/);
+  assert.match(textOf(titleBar), /v1\.6\.5/);
   assert.match(textOf(titleBar), /悬浮窗/);
   const jyTree = ui.JianyingStudio({ active: true, providers: [], onNavigate: () => {} });
   assert.match(textOf(jyTree), /剪映自动化功能请使用桌面「悬浮窗」/);
@@ -117,11 +117,17 @@ test('right quick rail is removed while the left sidebar keeps an accessible res
   assert.match(orbMarkup, /id="chooseRename"/);
   assert.match(orbMarkup, /id="chooseWatermark"/);
   assert.match(orbMarkup, /id="wmProgFill"/);
+  assert.match(orbMarkup, /id="wmProgFish"/);
+  assert.match(orbMarkup, /fastCandySpin/);
+  assert.match(orbMarkup, /已经输出在原目录下啦/);
+  assert.match(orbMarkup, /id="fish-svg"/);
   const panelMarkup = companionMarkup.panelHtml(true);
   assert.match(panelMarkup, /data-stage="export"[\s\S]*批量导出/);
   assert.match(panelMarkup, /data-stage="subtitles"[\s\S]*字幕工程/);
   assert.match(panelMarkup, /data-stage="rename"[\s\S]*批量改名/);
   assert.match(panelMarkup, /data-stage="watermark"[\s\S]*样片水印/);
+  assert.match(panelMarkup, /id="petThemeBtn"/);
+  assert.match(panelMarkup, /forceStageToken/);
   assert.match(panelMarkup, /id="jyWizard"/);
   assert.match(panelMarkup, /id="jyScan"/);
   assert.match(panelMarkup, /xm\.jianying\.draftDir/);

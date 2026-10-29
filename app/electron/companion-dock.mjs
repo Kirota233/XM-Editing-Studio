@@ -42,17 +42,33 @@ function orbHtml() {
     font-size: 11.5px; font-weight: 700; transition: all .15s; }
   .choice-btn:hover { background: #ffb6c1; color: #000; transform: translateY(-1px); }
   .choice-btn.cancel { padding: 4px 7px; border-color: #e2e8f0; background: #f8fafc; color: #64748b; }
-  .wm-prog { margin-top: 6px; height: 7px; width: 100%; border-radius: 999px; background: #ffe4e9; overflow: hidden; }
-  .wm-prog > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #ff7aa2, #ff4d79); border-radius: 999px; transition: width .22s ease; }
+  .wm-prog-wrap { position: relative; margin-top: 9px; padding-top: 6px; width: 100%; }
+  .wm-prog { position: relative; height: 10px; width: 100%; border-radius: 999px; background: #ffe4ec; border: 1.5px solid #ffb6c1; overflow: hidden; box-shadow: inset 0 1px 2px rgba(255,105,135,.22); }
+  .wm-prog > i { display: block; height: 100%; width: 0%; border-radius: 999px;
+    background-color: #ff5c8a;
+    background-image: repeating-linear-gradient(-45deg, rgba(255,255,255,.42) 0, rgba(255,255,255,.42) 8px, transparent 8px, transparent 16px);
+    background-size: 22.6px 22.6px;
+    animation: fastCandySpin .28s linear infinite;
+    transition: width .2s ease; }
+  @keyframes fastCandySpin { from { background-position: 0 0; } to { background-position: 22.6px 0; } }
+  .wm-fish { position: absolute; top: -3px; left: 4%; transform: translate(-50%, 0) scaleX(-1); font-size: 15px; line-height: 1;
+    filter: drop-shadow(0 2px 3px rgba(255,77,121,.35)); pointer-events: none; transition: left .2s ease;
+    animation: fishSwim .42s ease-in-out infinite alternate; z-index: 2; }
+  @keyframes fishSwim { from { transform: translate(-50%, -2px) scaleX(-1) rotate(-7deg); } to { transform: translate(-50%, 2px) scaleX(-1) rotate(7deg); } }
   .pet-wrap { position: relative; width: 176px; height: 176px; display: flex; align-items: center; justify-content: center;
     background: transparent !important; border: none !important; box-shadow: none !important; }
   .pet-gif { width: 172px; height: 172px; object-fit: contain; background: transparent !important; border: none !important;
     pointer-events: none; -webkit-user-drag: none; animation: idleBreathe 1.6s ease-in-out infinite; }
+  .fish-svg { width: 146px; height: 146px; overflow: visible; pointer-events: none; filter: drop-shadow(0 8px 14px rgba(15,23,42,.26)); animation: fishFloat 2.8s ease-in-out infinite; display: none; }
+  .fish-tail { transform-origin: 120px 80px; animation: fishWag 1.1s ease-in-out infinite; }
+  .stage[data-working="1"] .fish-tail { animation-duration: .32s; }
+  @keyframes fishFloat { 0%,100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-6px) rotate(1.5deg); } }
+  @keyframes fishWag { 0%,100% { transform: rotate(0deg); } 25% { transform: rotate(9deg); } 75% { transform: rotate(-9deg); } }
   @keyframes idleBreathe { 0%,100% { transform: scale(1) } 50% { transform: scale(0.972) } }
   .stage.jumping .pet-wrap { animation: jumpJoy .4s ease-out; }
   @keyframes jumpJoy { 0% { transform: translateY(0) } 50% { transform: translateY(-28px) } 100% { transform: translateY(0) } }
   </style></head><body>
-  <div class="stage" id="stage" data-pose="default">
+  <div class="stage" id="stage" data-pose="default" data-theme="miao">
     <div class="bubble" id="bubble">
       <div id="bubbleText"></div>
       <div class="choice-btns" id="choiceBtns" style="display:none">
@@ -60,10 +76,36 @@ function orbHtml() {
         <button type="button" class="choice-btn" id="chooseWatermark">💧 加水印</button>
         <button type="button" class="choice-btn cancel" id="chooseCancel" title="取消">✕</button>
       </div>
-      <div class="wm-prog" id="wmProg" style="display:none"><i id="wmProgFill"></i></div>
+      <div class="wm-prog-wrap" id="wmProg" style="display:none">
+        <div class="wm-prog"><i id="wmProgFill"></i></div>
+        <span class="wm-fish" id="wmProgFish" aria-hidden="true">🐟</span>
+      </div>
     </div>
     <div class="pet-wrap" id="pet-wrap">
       <img class="pet-gif" id="pet-gif" src="/miao/default.gif" alt="月薪喵" draggable="false" />
+      <svg class="fish-svg" id="fish-svg" viewBox="0 0 160 150" aria-label="大肥鱼">
+        <defs>
+          <radialGradient id="fgBody" cx="38%" cy="30%" r="68%">
+            <stop offset="0%" stop-color="#8be4ff"/><stop offset="52%" stop-color="#4ba8e8"/><stop offset="100%" stop-color="#2869b8"/>
+          </radialGradient>
+          <linearGradient id="fgBelly" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#fffdf9"/><stop offset="100%" stop-color="#e3f4ff"/>
+          </linearGradient>
+        </defs>
+        <g class="fish-tail">
+          <path d="M118 76 C138 50, 155 54, 150 76 C156 96, 138 102, 118 82 Z" fill="url(#fgBody)"/>
+          <path d="M123 77 L145 65 M123 80 L145 91" stroke="#b9f0ff" stroke-width="2" stroke-linecap="round" opacity=".65"/>
+        </g>
+        <path d="M64 38 C76 18, 102 22, 102 42 Z" fill="#5cb8f0"/>
+        <ellipse cx="74" cy="78" rx="52" ry="43" fill="url(#fgBody)"/>
+        <path d="M30 84 C38 114, 98 118, 114 86 C96 72, 48 70, 30 84 Z" fill="url(#fgBelly)"/>
+        <ellipse cx="46" cy="68" rx="9.5" ry="10.5" fill="#fff"/>
+        <circle cx="44" cy="68" r="5.5" fill="#172554"/>
+        <circle cx="42" cy="65" r="2.2" fill="#fff"/>
+        <ellipse cx="38" cy="83" rx="6.5" ry="3.8" fill="#ff8da6" opacity=".62"/>
+        <path d="M25 79 Q30 83 35 79" fill="none" stroke="#1e3a8a" stroke-width="2.2" stroke-linecap="round"/>
+        <path d="M70 88 C62 104, 80 110, 86 92 Z" fill="#3b8ed6" opacity=".9"/>
+      </svg>
     </div>
   </div>
   <script>
@@ -74,8 +116,10 @@ function orbHtml() {
     const choiceBtns = document.getElementById('choiceBtns');
     const wmProg = document.getElementById('wmProg');
     const wmProgFill = document.getElementById('wmProgFill');
+    const wmProgFish = document.getElementById('wmProgFish');
     const petGif = document.getElementById('pet-gif');
-    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default', choiceActive = false, lastNoticeToken = '';
+    const fishSvg = document.getElementById('fish-svg');
+    let bubbleTimer = 0, gifTimer = 0, currentKey = 'default', choiceActive = false, workingActive = false, lastNoticeToken = '', petTheme = 'miao';
 
     const GIF_MAP = {
       default: '/miao/default.gif',
@@ -95,6 +139,13 @@ function orbHtml() {
       { key: 'cry', duration: 5000, lines: ['拍拍小肚皮~ 陪陪我好不好~', '渲染队列交给我盯紧啦~'] }
     ];
 
+    function applyPetTheme(nextTheme) {
+      petTheme = nextTheme === 'dafeyu' ? 'dafeyu' : 'miao';
+      stage.dataset.theme = petTheme;
+      petGif.style.display = petTheme === 'miao' ? 'block' : 'none';
+      fishSvg.style.display = petTheme === 'dafeyu' ? 'block' : 'none';
+    }
+
     function showMessage(text, duration = 3000, opts = {}) {
       if (!text) return;
       choiceActive = Boolean(opts.choice);
@@ -102,14 +153,16 @@ function orbHtml() {
       choiceBtns.style.display = opts.choice ? 'flex' : 'none';
       wmProg.style.display = typeof opts.progress === 'number' ? 'block' : 'none';
       if (typeof opts.progress === 'number') {
-        wmProgFill.style.width = Math.max(2, Math.min(100, opts.progress)) + '%';
+        const pct = Math.max(4, Math.min(100, opts.progress));
+        wmProgFill.style.width = pct + '%';
+        if (wmProgFish) wmProgFish.style.left = Math.max(6, Math.min(94, pct)) + '%';
       }
       bubble.classList.toggle('interactive', Boolean(opts.choice));
       bubble.classList.add('show');
       clearTimeout(bubbleTimer);
-      if (duration > 0 && !opts.choice) {
+      if (duration > 0 && !opts.choice && !opts.working) {
         bubbleTimer = setTimeout(() => {
-          if (!choiceActive) bubble.classList.remove('show');
+          if (!choiceActive && !workingActive) bubble.classList.remove('show');
         }, duration);
       }
     }
@@ -121,10 +174,12 @@ function orbHtml() {
         petGif.src = target;
       }
       stage.dataset.pose = key;
-      if (message) showMessage(message, opts.choice ? 0 : Math.min(duration, 3600), opts);
+      stage.dataset.working = opts.working ? '1' : '0';
+      if (message) showMessage(message, (opts.choice || opts.working) ? 0 : Math.min(duration, 3600), opts);
       clearTimeout(gifTimer);
-      if (key !== 'default' && !opts.choice) {
+      if (key !== 'default' && !opts.choice && !opts.working) {
         gifTimer = setTimeout(() => {
+          if (workingActive) return;
           currentKey = 'default';
           petGif.src = GIF_MAP.default;
           stage.dataset.pose = 'default';
@@ -142,7 +197,7 @@ function orbHtml() {
     })();
 
     setInterval(() => {
-      if (currentKey !== 'default' || choiceActive) return;
+      if (currentKey !== 'default' || choiceActive || workingActive) return;
       if (Math.random() < 0.6) {
         const pick = IDLE_POOL[Math.floor(Math.random() * IDLE_POOL.length)];
         const line = Math.random() < 0.55 ? pick.lines[Math.floor(Math.random() * pick.lines.length)] : '';
@@ -158,7 +213,7 @@ function orbHtml() {
       if (!paths.length) return;
       const res = await api?.companionAction?.('drop-paths', paths);
       const count = res?.droppedFilesCount || paths.length;
-      switchGif('comfort', '收到 ' + count + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+      switchGif('comfort', '收到 ' + count + ' 个文件，要对这些文件做什么呢？', 15000, { choice: true });
     });
 
     document.getElementById('chooseRename').onclick = e => {
@@ -170,7 +225,8 @@ function orbHtml() {
     document.getElementById('chooseWatermark').onclick = e => {
       e.stopPropagation();
       choiceActive = false;
-      switchGif('enjoy', '正在同目录批量加水印 0%…', 10000, { progress: 2 });
+      workingActive = true;
+      switchGif('play', '努力加样片水印中 0%…', 0, { working: true, progress: 4 });
       api?.companionAction?.('drop-choice', 'watermark');
     };
     document.getElementById('chooseCancel').onclick = e => {
@@ -227,18 +283,26 @@ function orbHtml() {
 
     function render(s) {
       if (!s) return;
+      if (s.petTheme) applyPetTheme(s.petTheme);
       const wm = s.watermark || {}, jy = s.jianying || {};
       if (s.pendingDropCount > 0 && !wm.running) {
-        switchGif('comfort', '收到 ' + s.pendingDropCount + ' 个文件，需要做什么操作呢？', 15000, { choice: true });
+        workingActive = false;
+        switchGif('comfort', '收到 ' + s.pendingDropCount + ' 个文件，要对这些文件做什么呢？', 15000, { choice: true });
         return;
       }
       if (wm.running) {
         choiceActive = false;
-        showMessage('正在加水印 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { progress: wm.overallProgress || 2 });
+        workingActive = true;
+        switchGif('play', '努力加水印中 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { working: true, progress: wm.overallProgress || 4 });
+      } else if (workingActive) {
+        workingActive = false;
+        choiceActive = false;
+        if (s.orbNoticeToken) lastNoticeToken = s.orbNoticeToken;
+        switchGif('default', s.orbNotice || '已经输出在原目录下啦 ✨', 5200);
       } else if (s.orbNotice && s.orbNoticeToken && s.orbNoticeToken !== lastNoticeToken) {
         lastNoticeToken = s.orbNoticeToken;
         choiceActive = false;
-        switchGif('enjoy', s.orbNotice, 5000);
+        switchGif('default', s.orbNotice, 5200);
       } else if (jy.exporting) {
         showMessage('正在自动导出剪映视频… 🚀', 2500);
       }
@@ -263,6 +327,10 @@ function panelHtml(acrylic) {
     background: rgba(255,255,255,.06); color: #d7dde5; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; transition: all .15s; }
   .icon:hover { border-color: #ffcf6e; color: #ffcf6e; }
   .icon.on { background: rgba(255,207,110,.2); border-color: #ffcf6e; color: #ffcf6e; }
+  .theme-mini { -webkit-app-region: no-drag; width: 19px; height: 19px; border-radius: 6px; border: 1px solid rgba(255,255,255,.06);
+    background: rgba(255,255,255,.02); color: rgba(255,255,255,.32); font-size: 9.5px; opacity: .42;
+    display: inline-flex; align-items: center; justify-content: center; transition: all .18s; padding: 0; }
+  .theme-mini:hover { opacity: .95; border-color: rgba(255,207,110,.4); color: #ffcf6e; background: rgba(255,255,255,.08); }
 
   /* 4-Stage Top Bar moved from Main Window into Floating Window */
   .stage-bar { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; background: rgba(0,0,0,.28); padding: 4px; border-radius: 12px; border: 1px solid rgba(255,255,255,.09); }
@@ -342,8 +410,9 @@ function panelHtml(acrylic) {
   footer { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   </style></head><body><div class="wrap">
   <header id="panelHeader">
-    <img class="avatar" src="/miao/default.gif" alt="月薪喵" draggable="false" />
+    <img class="avatar" id="panelAvatar" src="/miao/default.gif" alt="月薪喵" draggable="false" />
     <div class="grow"><h1>剪映自动化 · 悬浮窗</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
+    <button class="theme-mini" id="petThemeBtn" title="切换桌宠主题：月薪喵 / 大肥鱼">🐟</button>
     <button class="icon" id="pkSwitch" title="剪贴板句号守护开关">🛡️</button>
     <button class="icon on" id="dockBtn" title="自动磁吸跟随剪映窗口">🧲</button>
     <button class="icon" id="closeBtn" title="收起悬浮窗面板（不退出软件）">✕</button>
@@ -532,7 +601,7 @@ function panelHtml(acrylic) {
   <script>
     const api = window.blackObsidian, $ = id => document.getElementById(id);
     let state = null, toastTimer = 0, currentStage = localStorage.getItem('xm.jianying.stage') || 'export';
-    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false;
+    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false, lastForceStageToken = '';
 
     const toast = msg => {
       const t = $('toast');
@@ -558,9 +627,13 @@ function panelHtml(acrylic) {
       $('stageSubtitles').hidden = stage !== 'subtitles';
       $('stageRename').hidden = stage !== 'rename';
       $('stageWatermark').hidden = stage !== 'watermark';
-      if (notifyCat && (stage === 'rename' || stage === 'watermark')) {
-        toast('请将需要改名或加水印的文件/文件夹拖放到月薪喵上~');
-        api?.companionAction?.('prompt-drop', stage);
+      if (notifyCat) {
+        if (stage === 'rename' || stage === 'watermark') {
+          toast('请将需要改名或加水印的文件/文件夹拖放到月薪喵上~');
+          api?.companionAction?.('prompt-drop', stage);
+        } else {
+          api?.companionAction?.('set-stage', stage);
+        }
       }
     }
 
@@ -634,8 +707,16 @@ function panelHtml(acrylic) {
     function render(s) {
       if (!s) return;
       state = s;
-      if (s.activeStage && s.activeStage !== currentStage) {
-        switchStage(s.activeStage, false);
+      if (s.activeStage && s.forceStageToken && s.forceStageToken !== lastForceStageToken) {
+        lastForceStageToken = s.forceStageToken;
+        if (s.activeStage !== currentStage) {
+          switchStage(s.activeStage, false);
+        }
+      }
+      if ($('petThemeBtn')) {
+        const isFish = s.petTheme === 'dafeyu';
+        $('petThemeBtn').textContent = isFish ? '🐱' : '🐟';
+        $('petThemeBtn').title = isFish ? '当前：大肥鱼（点击切换回月薪喵）' : '当前：月薪喵（点击切换大肥鱼主题）';
       }
       const jy = s.jianying || {}, wm = s.watermark || {};
       $('dockBtn').className = 'icon' + (s.autoDock ? ' on' : '');
@@ -700,7 +781,8 @@ function panelHtml(acrylic) {
         try { localStorage.setItem('xm.jianying.subtitleOutput', jy.subtitleOutput); } catch {}
       }
 
-      const fCount = Number(jy.fileCount || 0);
+      const rFiles = Array.isArray(s.renameFiles) ? s.renameFiles : [];
+      const fCount = Number(jy.fileCount || rFiles.length || 0);
       $('renameFilesMeta').textContent = fCount > 0 ? ('✓ 已载入 ' + fCount + ' 个待改名文件') : (renameFolder ? ('目录：' + renameFolder) : '尚未拖入文件');
       const plan = Array.isArray(jy.plan) ? jy.plan : [];
       $('jyExecuteRename').disabled = jyRun || !plan.length;
@@ -708,10 +790,18 @@ function panelHtml(acrylic) {
         $('jyExecuteRename').textContent = plan.length ? ('开始执行改名 (' + plan.length + ')') : '开始执行改名';
       }
       const pBody = $('jyPlanBody');
-      if (!plan.length) {
-        pBody.innerHTML = '<tr><td colspan="2" class="empty-tip">拖入文件并选择模式后点击「生成改名预览」</td></tr>';
-      } else {
+      if (plan.length) {
         pBody.innerHTML = plan.map(p => '<tr><td>' + String(p.old_name || '').replace(/</g, '&lt;') + '</td><td>' + String(p.new_name || '').replace(/</g, '&lt;') + '</td></tr>').join('');
+      } else if (rFiles.length) {
+        pBody.innerHTML = rFiles.map((fp, i) => {
+          const base = String(fp || '').split(/[\\\\/]/).pop() || fp;
+          const extMatch = base.match(/(\\.[^.]+)$/);
+          const ext = extMatch ? extMatch[1] : '';
+          const tpl = ($('renameTemplate').value.trim() || '短剧名称_第1集').replace(/(\\d+)(?!.*\\d)/, m => String(Number(m) + i));
+          return '<tr><td>' + String(base).replace(/</g, '&lt;') + '</td><td style="color:#ffcf6e">' + String(tpl + ext).replace(/</g, '&lt;') + ' (点上方生成预览确认)</td></tr>';
+        }).join('');
+      } else {
+        pBody.innerHTML = '<tr><td colspan="2" class="empty-tip">拖入文件并选择模式后点击「生成改名预览」</td></tr>';
       }
 
       const m = jy.modal;
@@ -742,6 +832,7 @@ function panelHtml(acrylic) {
     $('closeBtn').onclick = () => act('panel', false);
     $('dockBtn').onclick = () => act('toggle-dock');
     $('pkSwitch').onclick = () => act('toggle-period');
+    if ($('petThemeBtn')) $('petThemeBtn').onclick = () => act('toggle-pet-theme');
     $('jyWizard').onclick = () => act('jy-wizard', null, $('jyWizard'), '录制中…');
     $('jyScan').onclick = () => act('jy-scan', { modelKey: $('jyModelSelect').value }, $('jyScan'), '识别中…');
     $('jyExport').onclick = () => act('jy-export', { index: selectedDraftIdx }, $('jyExport'), '启动导出…');
@@ -866,7 +957,10 @@ export function createCompanionDock({
   let pollTimer = null;
   let lastJianying = null;
   let activeStage = 'export';
+  let forceStageToken = '';
+  let petTheme = 'miao';
   let pendingDropFiles = [];
+  let renameFiles = [];
   let orbNotice = '';
   let orbNoticeToken = '';
   const acrylic = supportsAcrylic();
@@ -948,8 +1042,9 @@ export function createCompanionDock({
     const jw = jy?.jianyingWindow || {};
     const logs = Array.isArray(jy?.logs) ? jy.logs : [];
     return {
-      visible, panelOpen, autoDock, acrylic, activeStage,
+      visible, panelOpen, autoDock, acrylic, activeStage, forceStageToken, petTheme,
       pendingDropCount: pendingDropFiles.length,
+      renameFiles,
       orbNotice, orbNoticeToken,
       jianyingFound: Boolean(jw.found && !jw.minimized),
       jianyingWindow: jw,
@@ -1056,6 +1151,11 @@ export function createCompanionDock({
       activeStage = String(value || 'export');
       return broadcastState();
     }
+    if (action === 'toggle-pet-theme') {
+      petTheme = petTheme === 'dafeyu' ? 'miao' : 'dafeyu';
+      setNoticeOnOrb(petTheme === 'dafeyu' ? '🐟 已切换为「大肥鱼」主题~' : '🐱 已切换回「月薪喵」主题~');
+      return broadcastState();
+    }
     if (action === 'prompt-drop') {
       activeStage = String(value || activeStage || 'rename');
       setNoticeOnOrb('请把需要改名或加水印的文件/文件夹，直接拖放到我身上吧~ 🐾');
@@ -1077,7 +1177,11 @@ export function createCompanionDock({
       const extra = await onAction?.(action, value, {
         setPendingDrop: files => { pendingDropFiles = files || []; },
         getPendingDrop: () => pendingDropFiles,
-        setStage: st => { activeStage = st; },
+        setRenameFiles: files => { renameFiles = files || []; },
+        setStage: (st, force = true) => {
+          activeStage = st;
+          if (force) forceStageToken = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 6);
+        },
         openPanel: () => setPanel(true),
         notifyOrb: setNoticeOnOrb,
       });

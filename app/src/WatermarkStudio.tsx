@@ -256,226 +256,34 @@ export function WatermarkStudio({ active }: WatermarkStudioProps) {
                 </span>
               </div>
 
-              {/* Watermark Overlay Rendering */}
-              {isBuiltinPng && settings.position === 'fullscreen' ? (
-                <img
-                  src="/watermark.png"
-                  alt="红薯样片水印预览"
-                  className="bos-wm-builtin-img"
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'contain',
-                    objectPosition: 'left top',
-                    opacity: settings.opacity,
-                    pointerEvents: 'none',
-                    zIndex: 1,
-                  }}
-                />
-              ) : settings.position === 'tile' ? (
-                <div
-                  className="bos-wm-overlay-tile"
-                  style={{
-                    opacity: settings.opacity,
-                    transform: `rotate(-24deg) scale(${0.75 + settings.scale * 0.9})`,
-                  }}
-                >
-                  {Array.from({ length: 9 }).map((_, idx) => (
-                    <span key={idx} className="bos-wm-stamp">
-                      {displayLabel}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div
-                  className={`bos-wm-overlay-single anchor-${settings.position === 'fullscreen' ? 'top-left' : settings.position}`}
-                  style={{
-                    opacity: settings.opacity,
-                    fontSize: `${Math.round(11 + settings.scale * 22)}px`,
-                  }}
-                >
-                  <span className="bos-wm-stamp">{displayLabel}</span>
-                </div>
-              )}
-
-              {/* Quick Hotspot Zones */}
-              <div className="bos-wm-hotspots">
-                {(['top-left', 'top-right', 'center', 'bottom-left', 'bottom-right'] as const).map(pos => (
-                  <button
-                    key={pos}
-                    type="button"
-                    className={`bos-wm-hotspot spot-${pos} ${settings.position === pos ? 'active' : ''}`}
-                    onClick={() => updateSettings({ position: pos })}
-                    title={`定位于: ${POSITION_OPTIONS.find(p => p.id === pos)?.label}`}
-                  />
-                ))}
-              </div>
+              {/* Watermark Overlay Rendering — strictly built-in watermark.png fullscreen */}
+              <img
+                src="/watermark.png"
+                alt="红薯样片水印预览"
+                className="bos-wm-builtin-img"
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  objectPosition: 'left top',
+                  opacity: 1,
+                  pointerEvents: 'none',
+                  zIndex: 1,
+                }}
+              />
             </div>
           </div>
 
-          {/* Watermark Content & Position Controls */}
+          {/* Watermark Info & Output Directory Controls */}
           <div className="bos-wm-card">
-            <div className="bos-wm-tabs" role="tablist">
-              <button
-                type="button"
-                className={settings.mode === 'image' ? 'active' : ''}
-                onClick={() => updateSettings({ mode: 'image', watermarkImage: settings.watermarkImage || 'builtin', position: 'fullscreen', opacity: 1 })}
-              >
-                原版红薯样片 / PNG 图标
-              </button>
-              <button
-                type="button"
-                className={settings.mode === 'text' ? 'active' : ''}
-                onClick={() => updateSettings({ mode: 'text', position: settings.position === 'fullscreen' ? 'tile' : settings.position })}
-              >
-                文字防盗水印
-              </button>
-            </div>
-
-            {settings.mode === 'text' ? (
-              <div className="bos-wm-field-group">
-                <label className="bos-wm-label">水印文案内容</label>
-                <div className="bos-wm-input-row">
-                  <input
-                    type="text"
-                    className="bos-wm-input"
-                    value={textDraft}
-                    placeholder="输入样片防盗文字..."
-                    onChange={(e: any) => setTextDraft(e.target.value)}
-                    onBlur={() => {
-                      if (textDraft.trim() !== settings.watermarkText) {
-                        void updateSettings({ watermarkText: textDraft.trim() || '内部样片 · 严禁外传' });
-                      }
-                    }}
-                    onKeyDown={(e: any) => {
-                      if (e.key === 'Enter') {
-                        void updateSettings({ watermarkText: textDraft.trim() || '内部样片 · 严禁外传' });
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="bos-wm-btn-subtle"
-                    onClick={() => updateSettings({ watermarkText: textDraft.trim() || '内部样片 · 严禁外传' })}
-                  >
-                    应用
-                  </button>
-                </div>
-                <div className="bos-wm-preset-chips">
-                  {TEXT_PRESETS.map(preset => (
-                    <button
-                      key={preset}
-                      type="button"
-                      className={`bos-wm-chip ${settings.watermarkText === preset ? 'active' : ''}`}
-                      onClick={() => {
-                        setTextDraft(preset);
-                        void updateSettings({ watermarkText: preset });
-                      }}
-                    >
-                      {preset}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="bos-wm-field-group">
-                <label className="bos-wm-label">水印图像源（默认内置 watermarker 原版红薯样片）</label>
-                <div className="bos-wm-input-row">
-                  <div className="bos-wm-path-box" title={isBuiltinPng ? '内置 watermark.png（红薯样片全画幅透明水印）' : settings.watermarkImage}>
-                    {isBuiltinPng ? '✓ 内置红薯样片 (watermark.png)' : baseName(settings.watermarkImage)}
-                  </div>
-                  {!isBuiltinPng && (
-                    <button
-                      type="button"
-                      className="bos-wm-btn-subtle"
-                      onClick={() => updateSettings({ mode: 'image', watermarkImage: 'builtin', position: 'fullscreen', opacity: 1 })}
-                    >
-                      恢复默认
-                    </button>
-                  )}
-                  <button type="button" className="bos-wm-btn-subtle" onClick={handleChooseImage}>
-                    自定义图片
-                  </button>
-                </div>
-              </div>
-            )}
-
             <div className="bos-wm-field-group">
-              <label className="bos-wm-label">水印布局模式</label>
-              <div className="bos-wm-pos-grid">
-                {POSITION_OPTIONS.map(opt => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    className={`bos-wm-pos-btn ${settings.position === opt.id ? 'active' : ''}`}
-                    onClick={() => updateSettings({ position: opt.id })}
-                  >
-                    <strong>{opt.label}</strong>
-                    <span>{opt.desc}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="bos-wm-sliders">
-              <div className="bos-wm-slider-row">
-                <div className="bos-wm-slider-head">
-                  <span>不透明度 (Opacity)</span>
-                  <strong>{Math.round(settings.opacity * 100)}%</strong>
+              <label className="bos-wm-label">水印图层（watermarker 原版全画幅覆盖）</label>
+              <div className="bos-wm-input-row">
+                <div className="bos-wm-path-box" title="内置 watermark.png（红薯样片全画幅透明水印）">
+                  ✓ 内置红薯样片 (watermark.png · 原版全画幅覆盖)
                 </div>
-                <input
-                  type="range"
-                  min="5"
-                  max="95"
-                  step="5"
-                  value={Math.round(settings.opacity * 100)}
-                  onChange={(e: any) => updateSettings({ opacity: Number(e.target.value) / 100 })}
-                />
-              </div>
-
-              <div className="bos-wm-slider-row">
-                <div className="bos-wm-slider-head">
-                  <span>水印尺寸比例 (Scale)</span>
-                  <strong>{Math.round(settings.scale * 100)}%</strong>
-                </div>
-                <input
-                  type="range"
-                  min="10"
-                  max="65"
-                  step="5"
-                  value={Math.round(settings.scale * 100)}
-                  onChange={(e: any) => updateSettings({ scale: Number(e.target.value) / 100 })}
-                />
-              </div>
-            </div>
-
-            <div className="bos-wm-row-2col">
-              <div className="bos-wm-field-group">
-                <label className="bos-wm-label">画质级别 (CRF)</label>
-                <select
-                  className="bos-wm-select"
-                  value={String(settings.crf)}
-                  onChange={(e: any) => updateSettings({ crf: Number(e.target.value) })}
-                >
-                  <option value="18">高 (大体积 · CRF 18)</option>
-                  <option value="23">中 (均衡/推荐 · CRF 23)</option>
-                  <option value="28">低 (极速小体积 · CRF 28)</option>
-                </select>
-              </div>
-              <div className="bos-wm-field-group">
-                <label className="bos-wm-label">音频与分辨率</label>
-                <select
-                  className="bos-wm-select"
-                  value={settings.size}
-                  onChange={(e: any) => updateSettings({ size: e.target.value })}
-                >
-                  <option value="original">原画分辨率 · 智能音频</option>
-                  <option value="1080p">1080P 全高清 · AAC</option>
-                  <option value="720p">720P 审片高清 · AAC</option>
-                  <option value="480p">480P 极速小样 · AAC</option>
-                </select>
               </div>
             </div>
 
