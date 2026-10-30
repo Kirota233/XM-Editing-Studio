@@ -190,6 +190,23 @@ if (wv && !window.blackObsidian) {
     return h;
   };
 
+  function compareGeminiModels(a: string, b: string): number {
+    const getVer = (s: string) => {
+      const m = s.match(/gemini-(\d+(?:\.\d+)?)/i);
+      return m ? parseFloat(m[1]) : 0;
+    };
+    const verA = getVer(a);
+    const verB = getVer(b);
+    if (verA !== verB) return verB - verA;
+    const isLiteA = /-lite/i.test(a);
+    const isLiteB = /-lite/i.test(b);
+    if (isLiteA !== isLiteB) return isLiteA ? 1 : -1;
+    const isFlashA = /flash/i.test(a);
+    const isFlashB = /flash/i.test(b);
+    if (isFlashA !== isFlashB) return isFlashA ? -1 : 1;
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  }
+
   async function handleLocalApi(pathname: string, body: any) {
     if (pathname === '/api/providers/models') {
       const provider = body.provider || {};
@@ -211,10 +228,25 @@ if (wv && !window.blackObsidian) {
         try { payload = JSON.parse(raw); } catch { payload = {}; }
         const rawModels = Array.isArray(payload?.models) ? payload.models : [];
         const filtered = rawModels
-          .filter((m: any) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
-          .map((m: any) => String(m.name || '').replace(/^models\//, ''))
+          .filter((m: any) => {
+            const name = String(m.name || m.id || '').replace(/^models\//, '');
+            if (!name) return false;
+            const lower = name.toLowerCase();
+            // 只要 gemini 模型
+            if (!lower.includes('gemini')) return false;
+            // 排除非文字模型（向量模型、图像生成模型、语音模型等）
+            if (lower.includes('embedding') || lower.includes('embed')) return false;
+            if (lower.includes('imagen') || lower.includes('image')) return false;
+            if (lower.includes('tts') || lower.includes('whisper') || lower.includes('audio-only')) return false;
+            // 文字生成模型：如果 API 返回了 supportedGenerationMethods，必须支持 generateContent
+            if (Array.isArray(m.supportedGenerationMethods) && !m.supportedGenerationMethods.includes('generateContent')) {
+              return false;
+            }
+            return true;
+          })
+          .map((m: any) => String(m.name || m.id || '').replace(/^models\//, ''))
           .filter(Boolean);
-        filtered.sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+        filtered.sort(compareGeminiModels);
         return { ok: true, models: [...new Set(filtered)] };
       } else {
         const url = endpointUrl(provider.baseUrl, '/models');
@@ -229,8 +261,16 @@ if (wv && !window.blackObsidian) {
         const list = (Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [])
           .map((m: any) => (typeof m === 'string' ? m : m.id || m.name || ''))
           .filter(Boolean);
-        list.sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
-        return { ok: true, models: [...new Set(list)] };
+        const isGeminiCard = /gemini/i.test(provider.name || '');
+        const filteredList = isGeminiCard
+          ? list.filter((m: string) => /gemini/i.test(m) && !/embedding|embed|imagen|tts|whisper/i.test(m))
+          : list.filter((m: string) => !/embedding|embed|dall-e|tts|whisper/i.test(m));
+        if (isGeminiCard) {
+          filteredList.sort(compareGeminiModels);
+        } else {
+          filteredList.sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+        }
+        return { ok: true, models: [...new Set(filteredList)] };
       }
     }
     if (pathname === '/api/providers/test') {

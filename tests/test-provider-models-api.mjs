@@ -41,7 +41,7 @@ function mockReqRes(url, body) {
   };
 }
 
-test('/api/providers/models fetches and filters Gemini models with generateContent', async () => {
+test('/api/providers/models fetches and filters Gemini text models only', async () => {
   const origFetch = globalThis.fetch;
   try {
     let capturedUrl = '';
@@ -58,7 +58,14 @@ test('/api/providers/models fetches and filters Gemini models with generateConte
             { name: 'models/gemini-1.5-flash', supportedGenerationMethods: ['generateContent'] },
             { name: 'models/gemini-2.5-pro', supportedGenerationMethods: ['generateContent'] },
             { name: 'models/gemini-2.5-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.5-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.5-flash-lite', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.8-flash', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/gemini-3.8-flash-lite', supportedGenerationMethods: ['generateContent'] },
             { name: 'models/text-embedding-004', supportedGenerationMethods: ['embedContent'] },
+            { name: 'models/imagen-3.0-generate-002', supportedGenerationMethods: ['imageGeneration'] },
+            { name: 'models/gemma-2-9b-it', supportedGenerationMethods: ['generateContent'] },
+            { name: 'models/learnlm-1.5-pro-experimental', supportedGenerationMethods: ['generateContent'] },
           ],
         }),
       };
@@ -78,8 +85,16 @@ test('/api/providers/models fetches and filters Gemini models with generateConte
     assert.equal(result.body.ok, true);
     assert.ok(capturedUrl.includes('generativelanguage.googleapis.com'));
     assert.equal(capturedHeaders['x-goog-api-key'], 'test-gemini-key');
-    // text-embedding-004 must be filtered out, models/ prefix removed, sorted
-    assert.deepEqual(result.body.models, ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash']);
+    // Non-gemini (gemma, learnlm) and non-text (embedding, imagen) must be filtered out
+    assert.deepEqual(result.body.models, [
+      'gemini-3.8-flash',
+      'gemini-3.8-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-1.5-flash'
+    ]);
   } finally {
     globalThis.fetch = origFetch;
   }
@@ -127,3 +142,15 @@ test('/api/providers/models fetches OpenAI-compatible models with Bearer token',
     globalThis.fetch = origFetch;
   }
 });
+
+test('built music-studio.js includes Gemini 3.5/3.8 Flash & Lite defaults and scrollable model-menu-list', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const js = fs.readFileSync(path.resolve('app/dist/client/assets/music-studio.js'), 'utf8');
+  assert.ok(js.includes('gemini-3.5-flash'), 'must include gemini-3.5-flash');
+  assert.ok(js.includes('gemini-3.5-flash-lite'), 'must include gemini-3.5-flash-lite');
+  assert.ok(js.includes('gemini-3.8-flash'), 'must include gemini-3.8-flash');
+  assert.ok(js.includes('gemini-3.8-flash-lite'), 'must include gemini-3.8-flash-lite');
+  assert.ok(js.includes('model-menu-list'), 'must include scrollable model-menu-list container');
+});
+

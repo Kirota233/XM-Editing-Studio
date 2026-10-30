@@ -245,6 +245,23 @@ function extractText(protocol, payload) {
   return "";
 }
 
+function compareGeminiModels(a, b) {
+  const getVer = (s) => {
+    const m = s.match(/gemini-(\d+(?:\.\d+)?)/i);
+    return m ? parseFloat(m[1]) : 0;
+  };
+  const verA = getVer(a);
+  const verB = getVer(b);
+  if (verA !== verB) return verB - verA;
+  const isLiteA = /-lite/i.test(a);
+  const isLiteB = /-lite/i.test(b);
+  if (isLiteA !== isLiteB) return isLiteA ? 1 : -1;
+  const isFlashA = /flash/i.test(a);
+  const isFlashB = /flash/i.test(b);
+  if (isFlashA !== isFlashB) return isFlashA ? -1 : 1;
+  return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+}
+
 async function requestProviderModels(provider, timeoutMs = 30_000) {
   if (!provider || typeof provider !== "object") {
     throw Object.assign(new Error("找不到供应商配置。"), { status: 400 });
@@ -271,10 +288,25 @@ async function requestProviderModels(provider, timeoutMs = 30_000) {
     const { payload } = await readUpstreamResponse(response, provider.apiKey, "拉取 Gemini 模型列表");
     const rawModels = Array.isArray(payload?.models) ? payload.models : [];
     const filtered = rawModels
-      .filter((m) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes("generateContent"))
+      .filter((m) => {
+        const name = String(m.name || m.id || "").replace(/^models\//, "");
+        if (!name) return false;
+        const lower = name.toLowerCase();
+        // 只要 gemini 模型
+        if (!lower.includes("gemini")) return false;
+        // 排除非文字模型（向量模型、图像生成模型、语音模型等）
+        if (lower.includes("embedding") || lower.includes("embed")) return false;
+        if (lower.includes("imagen") || lower.includes("image")) return false;
+        if (lower.includes("tts") || lower.includes("whisper") || lower.includes("audio-only")) return false;
+        // 文字生成模型：如果 API 返回了 supportedGenerationMethods，必须支持 generateContent
+        if (Array.isArray(m.supportedGenerationMethods) && !m.supportedGenerationMethods.includes("generateContent")) {
+          return false;
+        }
+        return true;
+      })
       .map((m) => (m.name || "").replace(/^models\//, ""))
       .filter(Boolean);
-    filtered.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+    filtered.sort(compareGeminiModels);
     return [...new Set(filtered)];
   } else {
     const url = endpointUrl(provider.baseUrl, "/models");
@@ -291,8 +323,16 @@ async function requestProviderModels(provider, timeoutMs = 30_000) {
     const list = (Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [])
       .map((m) => (typeof m === "string" ? m : m.id || m.name || ""))
       .filter(Boolean);
-    list.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
-    return [...new Set(list)];
+    const isGeminiCard = /gemini/i.test(provider.name || "");
+    const filteredList = isGeminiCard
+      ? list.filter((m) => /gemini/i.test(m) && !/embedding|embed|imagen|tts|whisper/i.test(m))
+      : list.filter((m) => !/embedding|embed|dall-e|tts|whisper/i.test(m));
+    if (isGeminiCard) {
+      filteredList.sort(compareGeminiModels);
+    } else {
+      filteredList.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+    }
+    return [...new Set(filteredList)];
   }
 }
 

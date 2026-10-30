@@ -11,3 +11,60 @@
 .bos-studio [hidden]{display:none!important}
 
 .bos-music-drag{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}.bos-music-drag button{font:inherit;font-size:12px;padding:8px 12px;color:var(--ui-text,#eee);background:var(--ui-soft,#333);border:1px solid var(--ui-border,#555);border-radius:var(--ui-control,10px)}.bos-music-drag button[draggable="true"]{cursor:grab;touch-action:none}.bos-music-drag button[draggable="true"]:active{cursor:grabbing}.bos-music-drag button:disabled{opacity:.5;cursor:default}.bos-music-drag small{color:var(--ui-muted,#aaa);font-size:11px}
+
+/* Provider Model Dropdown Window with Smooth Wheel Scrolling */
+.model-menu {
+  width: min(320px, 92vw) !important;
+  max-height: 400px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  z-index: 50 !important;
+  -webkit-app-region: no-drag !important;
+}
+.model-menu-list {
+  flex: 1 1 auto;
+  min-height: 40px;
+  max-height: 220px;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: thin;
+  scrollbar-color: #39403e transparent;
+}
+.model-menu-list::-webkit-scrollbar {
+  width: 6px;
+}
+.model-menu-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.model-menu-list::-webkit-scrollbar-thumb {
+  background: #39403e;
+  border-radius: 3px;
+}
+.model-menu-list::-webkit-scrollbar-thumb:hover {
+  background: #525d5a;
+}
+.model-menu-list button,
+.model-menu-item {
+  width: 100%;
+  min-height: 30px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: #e0e5e2;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.model-menu-list button:hover,
+.model-menu-item:hover {
+  background: #282e2c !important;
+  color: var(--lime, #c5f54f) !important;
+}
+

@@ -78,7 +78,11 @@ code = code.replace('title:"让灵感发出声音",description:"选择已接入�
 // 6. n6 & v3: Gemini AI Studio 免 Base URL，内置预设模型
 replaceOnce(
   '{value:"gemini",label:"Gemini Generative"},{value:"custom",label:"自定义（OpenAI 兼容）"}],v3={openai:[],anthropic:[],gemini:[],custom:[]}',
-  '{value:"gemini",label:"Gemini AI Studio（官方免填地址）"},{value:"openai",label:"OpenAI-compatible"},{value:"custom",label:"自定义（OpenAI 兼容）"},{value:"suno",label:"Suno 异步音乐"}],v3={openai:[],anthropic:[],gemini:["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash"],custom:[],suno:[]}'
+  '{value:"gemini",label:"Gemini AI Studio（官方免填地址）"},{value:"openai",label:"OpenAI-compatible"},{value:"custom",label:"自定义（OpenAI 兼容）"},{value:"suno",label:"Suno 异步音乐"}],v3={openai:[],anthropic:[],gemini:["gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3.8-flash","gemini-3.8-flash-lite"],custom:[],suno:[]}'
+);
+replaceOnce(
+  'function g3(){var v,R;const d=D8(u6,[]),T=(Array.isArray(d)?d:[]).map(U=>{if(U.protocol!=="suno")return U;let Q=U.baseUrl||"";',
+  'function g3(){var v,R;const GEM_DEFS=["gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3.8-flash","gemini-3.8-flash-lite"];const d=D8(u6,[]),T=(Array.isArray(d)?d:[]).map(U=>{if(U.protocol==="gemini"&&(!U.models||!U.models.length||(U.models.length===1&&U.models[0]==="gemini-2.5-flash"))){return{...U,models:GEM_DEFS}}if(U.protocol!=="suno")return U;let Q=U.baseUrl||"";'
 );
 
 // 7. 图2: 替换 p3 (卡片标题 Provider Select + 动态 API 拉取模型列表) 与 S3 (添加对话框)
@@ -110,9 +114,12 @@ function p3({provider:d,onChange:T,onRemove:x,onTest:v}){
       });
       const data = await resp.json();
       if (data && data.ok && Array.isArray(data.models) && data.models.length > 0) {
-        setApiModels(data.models);
+        const filtered = d.protocol === "gemini"
+          ? data.models.filter(m => /gemini/i.test(m) && !/embedding|embed|imagen|tts|whisper/i.test(m))
+          : data.models;
+        setApiModels(filtered);
         if (!d.models || d.models.length === 0) {
-          T({ models: data.models.slice(0, 3) });
+          T({ models: filtered.slice(0, 4) });
         }
       }
     } catch (e) {
@@ -198,8 +205,10 @@ function p3({provider:d,onChange:T,onRemove:x,onTest:v}){
                 s.jsx(Ja,{size:14})
               ]
             }),
-            hl.map(q=>s.jsxs("button",{type:"button",onClick:()=>_l(q),children:[s.jsx("span",{children:q}),s.jsx(Ja,{size:14})]},q)),
-            hl.length===0&&!fetchingModels&&s.jsx("p",{className:"model-empty",children:(d.apiKey||"").trim()?"暂无更多候选模型，可手动输入 ID 添加":"填写 API Key 后可从 API 获取最新模型"}),
+            s.jsxs("div",{className:"model-menu-list",tabIndex:0,onWheel:q=>q.stopPropagation(),children:[
+              hl.map(q=>s.jsxs("button",{type:"button",className:"model-menu-item",onClick:()=>_l(q),children:[s.jsx("span",{children:q}),s.jsx(Ja,{size:14})]},q)),
+              hl.length===0&&!fetchingModels&&s.jsx("p",{className:"model-empty",children:(d.apiKey||"").trim()?"暂无更多候选模型，可手动输入 ID 添加":"填写 API Key 后可从 API 获取最新模型"})
+            ]}),
             s.jsxs("form",{className:"custom-model-form",onSubmit:Zl,children:[
               s.jsx("input",{value:_,onChange:q=>b(q.target.value),placeholder:"输入自定义模型 ID","aria-label":"自定义模型 ID"}),
               s.jsx("button",{type:"submit",disabled:!_.trim(),"aria-label":"添加自定义模型",children:s.jsx(Ja,{size:15})})
@@ -236,7 +245,7 @@ function S3({onClose:d,onAdd:T,initialProtocol:x="gemini"}){
            protocol:U,
            baseUrl:isGem ? (Y.trim() || "https://generativelanguage.googleapis.com/v1beta") : Y.trim(),
            apiKey:b.trim(),
-           models:[O.trim() || (isGem ? "gemini-2.5-flash" : "gpt-4o")],
+           models:O.trim() ? [O.trim()] : (isGem ? ["gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3.8-flash","gemini-3.8-flash-lite"] : ["gpt-4o"]),
            markIcon:"",
            tone:"custom"
          });
@@ -250,12 +259,13 @@ function S3({onClose:d,onAdd:T,initialProtocol:x="gemini"}){
       s.jsxs("label",{children:["Provider Select",s.jsx("select",{value:U,onChange:W=>Q(W.target.value),children:n6.map(W=>s.jsx("option",{value:W.value,children:W.label},W.value))})]}),
       U!=="gemini"&&s.jsxs("label",{children:["Base URL",s.jsx("input",{required:!0,value:Y,onChange:W=>_(W.target.value),placeholder:U==="anthropic"?"https://api.anthropic.com/v1":U==="gemini"?"https://generativelanguage.googleapis.com/v1beta":"https://api.openai.com/v1"})]}),
       s.jsxs("label",{children:["API 密钥",s.jsx("input",{required:!0,type:"password",value:b,onChange:W=>X(W.target.value),placeholder:"粘贴你的 API Key",autoComplete:"new-password"})]}),
-      s.jsxs("label",{children:["模型 ID",s.jsx("input",{required:!1,value:O,onChange:W=>j(W.target.value),placeholder:U==="anthropic"?"例如：claude-sonnet-4-5":U==="gemini"?"例如：gemini-2.5-flash（留空自动使用）":"例如：gpt-4.1 或 chirp-v4"})]}),
+      s.jsxs("label",{children:["模型 ID",s.jsx("input",{required:!1,value:O,onChange:W=>j(W.target.value),placeholder:U==="anthropic"?"例如：claude-sonnet-4-5":U==="gemini"?"例如：gemini-3.5-flash（留空自动使用）":"例如：gpt-4.1 或 chirp-v4"})]}),
       s.jsxs("div",{className:"dialog-note",children:[s.jsx(K8,{size:15})," 密钥明文保存在此浏览器；请求会转发到你填写的服务地址。"]}),
       s.jsxs("div",{className:"dialog-actions",children:[s.jsx("button",{type:"button",className:"button-quiet",onClick:d,children:"取消"}),s.jsxs("button",{type:"submit",className:"button-primary",children:[s.jsx(Ja,{size:16})," 添加连接"]})]})
     ]})
   ]})});
 }
+
 `;
 
 code = code.slice(0, p3Start) + newP3AndS3 + code.slice(e3Start);
