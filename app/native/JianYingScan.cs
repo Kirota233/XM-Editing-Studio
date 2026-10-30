@@ -179,7 +179,19 @@ internal sealed partial class JianYingEngine
             int[] resolution = GetScreenResolution();
             string image = CaptureScreenJpegBase64();
             ScanProgress(id, "locating", "AI 正在定位草稿标题下方的项目区域");
-            var scope = ParseScope(RequestAiText(LocatePrompt, image, generation), resolution[0], resolution[1]);
+            DraftScope scope;
+            try
+            {
+                scope = ParseScope(RequestAiText(LocatePrompt, image, generation), resolution[0], resolution[1]);
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception locateError)
+            {
+                // 未匹配到草稿标题时回退为全屏范围继续识别草稿卡片，避免直接中断。
+                CheckInterrupted(generation);
+                Log("未定位到草稿标题（" + locateError.Message + "），已回退为全屏识别。");
+                scope = new DraftScope { Box = new Rectangle(0, 0, resolution[0], resolution[1]), Width = resolution[0], Height = resolution[1], HeadingCount = null };
+            }
             ScanProgress(id, "analyzing", "AI 正在识别草稿分区，已排除功能卡片和文件夹");
             string crop = CaptureCropJpegBase64(image, scope.Box, scope.Width, scope.Height);
             string prompt = CardsPrompt;

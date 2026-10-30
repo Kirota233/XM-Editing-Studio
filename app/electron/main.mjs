@@ -1,4 +1,4 @@
-﻿import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
+import { app, BrowserWindow, WebContentsView, Tray, Menu, dialog, ipcMain, shell, nativeImage, clipboard } from "electron";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { mkdir, readFile, writeFile, stat, readdir } from "node:fs/promises";
 import path from "node:path";
@@ -59,7 +59,7 @@ const webAnalysis = createWebAnalysis({ driver: webAI, copy: text => periodKeepe
 const webScan = createJianyingWebScan({ BrowserWindow });
 const jianying = createJianyingHost({ appDirectory: app.getAppPath(), dataDirectory: path.join(app.getPath('userData'), 'jianying-ai'), minimize: () => mainWindow?.minimize(), webScan });
 const autoUpdater = createAutoUpdater({
-  currentVersion: app.getVersion() || '1.6.5',
+  currentVersion: app.getVersion() || '1.6.6',
   downloadDirectory: path.join(app.getPath('userData'), 'updates'),
   onQuit: () => app.quit(),
   notify: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('bos:updater-state', state); },
@@ -458,6 +458,9 @@ if (!hasSingleInstance) {
             await jianying.run('files', { files: result.filePaths });
             await jianying.run('preview', { folder: '', template: '短剧名称_第1集', ai: false }).catch(() => {});
           }
+        } else if (action === 'jy-clear-rename-files') {
+          ctx?.setRenameFiles?.([]);
+          await jianying.run('files', { files: [] });
         } else if (action === 'jy-preview-rename') {
           const connection = value?.connection || jianying.lastConnection?.();
           await jianying.run('preview', {
@@ -483,6 +486,8 @@ if (!hasSingleInstance) {
           }
         } else if (action === 'wm-start') {
           await watermarkHost.startBatch({ sameDirectory: true });
+        } else if (action === 'wm-clear') {
+          await watermarkHost.clearJobs('all');
         } else if (action === 'wm-cancel') {
           await watermarkHost.cancelBatch();
         } else if (action === 'wm-open') {

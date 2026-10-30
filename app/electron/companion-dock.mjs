@@ -10,7 +10,7 @@ const { BrowserWindow, screen } = electron || {};
  *   operates Jianying automation / watermark / punctuation guard in place, like a Jianying plugin.
  */
 const ORB_SIZE = { width: 230, height: 256 };
-const PANEL_SIZE = { width: 430, height: 650 };
+const PANEL_SIZE = { width: 390, height: 420 };
 
 export function supportsAcrylic(release = os.release()) {
   const build = Number(String(release).split('.')[2] || 0);
@@ -346,7 +346,7 @@ function panelHtml(acrylic) {
   .card { padding: 10px 11px; border-radius: 13px; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
     box-shadow: inset 0 1px 0 rgba(255,255,255,.07); display: flex; flex-direction: column; gap: 8px; }
   .card.active { border-color: rgba(255,207,110,.65); }
-  .card[hidden] { display: none !important; }
+  .card[hidden], #jyPostScanArea[hidden] { display: none !important; }
   .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .title { font-size: 12px; font-weight: 750; display: flex; align-items: center; gap: 6px; }
   .meta { font-size: 10.5px; color: #aab3bf; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 195px; }
@@ -414,7 +414,7 @@ function panelHtml(acrylic) {
     <div class="grow"><h1>剪映自动化 · 悬浮窗</h1><p id="dockLabel">桌面置顶 · 可磁吸剪映窗口</p></div>
     <button class="theme-mini" id="petThemeBtn" title="切换桌宠主题：月薪喵 / 大肥鱼">🐟</button>
     <button class="icon" id="pkSwitch" title="剪贴板句号守护开关">🛡️</button>
-    <button class="icon on" id="dockBtn" title="自动磁吸跟随剪映窗口">🧲</button>
+    <button class="icon" id="dockBtn" title="自动磁吸跟随剪映窗口（默认关闭，点击开启）">🧲</button>
     <button class="icon" id="closeBtn" title="收起悬浮窗面板（不退出软件）">✕</button>
   </header>
 
@@ -461,7 +461,9 @@ function panelHtml(acrylic) {
         <button class="btn" id="jyScan">📸 识别截图</button>
         <button class="btn primary" id="jyExport">🚀 批量导出</button>
       </div>
+      <button class="btn" id="jyToggleParams" style="padding:4px 8px;font-size:10px">⚙️ 参数设置</button>
 
+      <div id="jyPostScanArea" hidden style="display:flex;flex-direction:column;gap:8px">
       <div class="table-wrap">
         <table>
           <thead><tr><th style="width:42px">起点</th><th>草稿名称</th><th style="width:64px">状态</th></tr></thead>
@@ -511,6 +513,7 @@ function panelHtml(acrylic) {
         <summary><span>运行日志</span><span id="jyLogCount">0 条</span></summary>
         <div class="log" id="jyLog" style="margin-top:6px">等待指令…</div>
       </details>
+      </div>
     </div>
 
     <!-- STAGE 02: 字幕工程 -->
@@ -549,6 +552,7 @@ function panelHtml(acrylic) {
         <div style="display:flex;gap:5px">
           <button class="btn" id="jyPickRenameDir" style="padding:4px 8px;font-size:10px">选文件夹</button>
           <button class="btn" id="jyPickRenameFiles" style="padding:4px 8px;font-size:10px">选文件</button>
+          <button class="btn" id="jyClearRenameFiles" style="padding:4px 8px;font-size:10px">清除列表</button>
         </div>
       </div>
       <div class="grid">
@@ -581,7 +585,10 @@ function panelHtml(acrylic) {
       </div>
       <div class="row">
         <div class="title"><span class="dot" id="wmDot"></span>批量样片水印</div>
-        <span class="meta" id="wmMeta">空闲</span>
+        <div style="display:flex;align-items:center;gap:5px">
+          <span class="meta" id="wmMeta">空闲</span>
+          <button class="btn" id="wmClear" style="padding:3px 8px;font-size:10px">清除列表</button>
+        </div>
       </div>
       <div class="bar"><i id="wmBar"></i></div>
       <div class="jobs" id="wmJobs"></div>
@@ -601,7 +608,7 @@ function panelHtml(acrylic) {
   <script>
     const api = window.blackObsidian, $ = id => document.getElementById(id);
     let state = null, toastTimer = 0, currentStage = localStorage.getItem('xm.jianying.stage') || 'export';
-    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false, lastForceStageToken = '';
+    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false, lastForceStageToken = '', showJyParams = false;
 
     const toast = msg => {
       const t = $('toast');
@@ -738,6 +745,9 @@ function panelHtml(acrylic) {
       }
 
       const queue = Array.isArray(jy.queue) ? jy.queue : [];
+      // 草稿列表与参数区默认折叠：识别出草稿或手动点「参数设置」后才展开，节省悬浮窗高度。
+      $('jyPostScanArea').hidden = !(queue.length > 0 || showJyParams);
+      $('jyToggleParams').textContent = showJyParams ? '⚙️ 收起参数' : '⚙️ 参数设置';
       if (selectedDraftIdx >= queue.length) selectedDraftIdx = 0;
       const qBody = $('jyQueueBody');
       if (!queue.length) {
@@ -837,6 +847,7 @@ function panelHtml(acrylic) {
     $('jyScan').onclick = () => act('jy-scan', { modelKey: $('jyModelSelect').value }, $('jyScan'), '识别中…');
     $('jyExport').onclick = () => act('jy-export', { index: selectedDraftIdx }, $('jyExport'), '启动导出…');
     $('jyStop').onclick = () => act('jy-stop');
+    $('jyToggleParams').onclick = () => { showJyParams = !showJyParams; render(state); };
     $('jyModeSelect').onchange = e => act('jy-settings', { mode: e.target.value });
     $('jyTplSelect').onchange = e => e.target.value && act('jy-select-tpl', { id: e.target.value });
     ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
@@ -882,6 +893,7 @@ function panelHtml(acrylic) {
       if (res?.renameFolder) renameFolder = res.renameFolder;
     };
     $('jyPickRenameFiles').onclick = () => act('jy-pick-rename-files', null, $('jyPickRenameFiles'), '选择中…');
+    $('jyClearRenameFiles').onclick = () => { renameFolder = ''; act('jy-clear-rename-files', null, $('jyClearRenameFiles'), '清除中…'); };
     $('jyPreviewRename').onclick = () => act('jy-preview-rename', {
       folder: renameFolder,
       template: $('renameTemplate').value.trim() || '短剧名称_第1集',
@@ -907,6 +919,7 @@ function panelHtml(acrylic) {
     $('modalYes').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: true });
     $('modalNo').onclick = () => state?.jianying?.modal && act('jy-modal', { id: state.jianying.modal.id, confirmed: false });
     $('wmAdd').onclick = () => act('wm-add');
+    $('wmClear').onclick = () => act('wm-clear', null, $('wmClear'), '清除中…');
     $('wmRun').onclick = () => act(state?.watermark?.running ? 'wm-cancel' : 'wm-start', null, $('wmRun'), '启动中…');
     $('launchJy').onclick = () => act('launch-jy', null, $('launchJy'), '启动剪映中…');
     $('openMain').onclick = () => act('navigate', '');
@@ -952,7 +965,7 @@ export function createCompanionDock({
   let orb = null;
   let panel = null;
   let panelOpen = false;
-  let autoDock = true;
+  let autoDock = false;
   let visible = false;
   let pollTimer = null;
   let lastJianying = null;

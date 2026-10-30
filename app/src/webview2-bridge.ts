@@ -191,6 +191,48 @@ if (wv && !window.blackObsidian) {
   };
 
   async function handleLocalApi(pathname: string, body: any) {
+    if (pathname === '/api/providers/models') {
+      const provider = body.provider || {};
+      if (!provider?.apiKey?.trim()) throw new Error('请先填写 API 密钥。');
+      const protocol = provider.protocol || 'openai';
+      if (protocol === 'gemini') {
+        const rawBaseUrl = (!provider.baseUrl || !String(provider.baseUrl).trim())
+          ? DEFAULT_GEMINI_BASE_URL
+          : provider.baseUrl;
+        const url = endpointUrl(rawBaseUrl, '/models');
+        url.searchParams.set('key', provider.apiKey.trim());
+        const resp = await hostFetch(url.toString(), {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': provider.apiKey.trim() },
+        });
+        const raw = await resp.text();
+        if (!resp.ok) throw new Error(`获取 Gemini 模型失败 (HTTP ${resp.status})`);
+        let payload: any;
+        try { payload = JSON.parse(raw); } catch { payload = {}; }
+        const rawModels = Array.isArray(payload?.models) ? payload.models : [];
+        const filtered = rawModels
+          .filter((m: any) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes('generateContent'))
+          .map((m: any) => String(m.name || '').replace(/^models\//, ''))
+          .filter(Boolean);
+        filtered.sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+        return { ok: true, models: [...new Set(filtered)] };
+      } else {
+        const url = endpointUrl(provider.baseUrl, '/models');
+        const resp = await hostFetch(url.toString(), {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${provider.apiKey.trim()}` },
+        });
+        const raw = await resp.text();
+        if (!resp.ok) throw new Error(`获取模型失败 (HTTP ${resp.status})`);
+        let payload: any;
+        try { payload = JSON.parse(raw); } catch { payload = {}; }
+        const list = (Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [])
+          .map((m: any) => (typeof m === 'string' ? m : m.id || m.name || ''))
+          .filter(Boolean);
+        list.sort((a: string, b: string) => b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' }));
+        return { ok: true, models: [...new Set(list)] };
+      }
+    }
     if (pathname === '/api/providers/test') {
       const startedAt = Date.now();
       if (body.provider?.protocol === 'suno' || /^suno[_-]/i.test(String(body.model || ''))) {

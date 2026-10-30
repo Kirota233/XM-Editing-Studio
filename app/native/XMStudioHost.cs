@@ -123,6 +123,8 @@ namespace XMStudioHost
         private readonly string _exePath;
         private readonly string _arguments;
         private Process _proc;
+        private StreamWriter _utf8Writer;
+        private readonly object _writeLock = new object();
         private int _seq;
         private readonly ConcurrentDictionary<int, TaskCompletionSource<Dictionary<string, object>>> _pending =
             new ConcurrentDictionary<int, TaskCompletionSource<Dictionary<string, object>>>();
@@ -151,6 +153,9 @@ namespace XMStudioHost
                 CreateNoWindow = true,
             };
             _proc = Process.Start(psi);
+            // .NET Framework 4.x 的 StandardInput 默认使用系统 ANSI 代码页（中文系统为 GBK），
+            // 而子进程按 UTF-8 读取，必须显式包装为无 BOM 的 UTF-8 写入器，否则中文路径会变成乱码。
+            _utf8Writer = new StreamWriter(_proc.StandardInput.BaseStream, new UTF8Encoding(false)) { AutoFlush = true };
             ThreadPool.QueueUserWorkItem(_ => ReadLoop(_proc));
         }
 
@@ -192,10 +197,11 @@ namespace XMStudioHost
         {
             EnsureStarted();
             string line = _json.Serialize(payload);
-            lock (_proc.StandardInput)
+            var writer = _utf8Writer;
+            lock (_writeLock)
             {
-                _proc.StandardInput.WriteLine(line);
-                _proc.StandardInput.Flush();
+                writer.WriteLine(line);
+                writer.Flush();
             }
         }
 
@@ -507,7 +513,7 @@ namespace XMStudioHost
             _choiceMode = true;
             _workingMode = false;
             _progressPercent = -1;
-            _bubbleText = string.Format("收到 {0} 个文件，要对这些文件做什么呢？", count);
+            _bubbleText = string.Format("收到 {0} 个文件，要做什么呢？", count);
             _bubbleUntil = DateTime.UtcNow.AddSeconds(30);
             if (_gifs.ContainsKey("comfort"))
             {
@@ -771,19 +777,19 @@ namespace XMStudioHost
                                     {
                                         g.FillPath(btnFill, p1);
                                         g.DrawPath(btnPen, p1);
-                                        g.DrawString("✏️ 改名", btnFont, btnText, _renameBtnRect, sf);
+                                        g.DrawString("改名", btnFont, btnText, _renameBtnRect, sf);
                                     }
                                     using (GraphicsPath p2 = CreateRoundRectPath(_watermarkBtnRect, 10))
                                     {
                                         g.FillPath(btnFill, p2);
                                         g.DrawPath(btnPen, p2);
-                                        g.DrawString("💧 加水印", btnFont, btnText, _watermarkBtnRect, sf);
+                                        g.DrawString("加水印", btnFont, btnText, _watermarkBtnRect, sf);
                                     }
                                     using (GraphicsPath p3 = CreateRoundRectPath(_cancelBtnRect, 10))
                                     {
                                         g.FillPath(Brushes.WhiteSmoke, p3);
                                         g.DrawPath(Pens.LightGray, p3);
-                                        g.DrawString("✕", btnFont, Brushes.DimGray, _cancelBtnRect, sf);
+                                        g.DrawString("×", btnFont, Brushes.DimGray, _cancelBtnRect, sf);
                                     }
                                 }
                             }
@@ -1531,7 +1537,7 @@ namespace XMStudioHost
 
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.5";
+        public const string CurrentVersion = "1.6.6";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -1552,7 +1558,9 @@ namespace XMStudioHost
 
         private bool _companionVisible = false;
         private bool _panelOpen = false;
-        private bool _autoDock = true;
+        private bool _autoDock = false;
+        private bool _panelHiddenForScan = false;
+        private int _jyStatusPolling = 0;
         private bool _quitting = false;
         private string _activeCompanionStage = "export";
         private string _forceStageToken = "";
@@ -1655,15 +1663,32 @@ namespace XMStudioHost
                     {
                         _lastJianyingState = (Dictionary<string, object>)ev["state"];
                         SendEventToMain("bos:jianying-state", _lastJianyingState);
+                        if (!IsJianyingBusy()) RestorePanelAfterScan();
                         BroadcastCompanionState();
                     }
                     else if (evName == "scan-capture" && ev.ContainsKey("id"))
                     {
-                        var unused = _jianyingRpc.CallAsync(new Dictionary<string, object>
+                        // 截图前临时隐藏悬浮面板，避免挡住剪映首页的草稿缩略图。
+                        object capId = ev["id"];
+                        Task.Run(async () =>
                         {
-                            { "action", "scan_capture_ready" },
-                            { "args", new Dictionary<string, object> { { "id", ev["id"] }, { "error", "" } } }
+                            HidePanelForScan(true);
+                            await Task.Delay(300);
+                            var unused = _jianyingRpc.CallAsync(new Dictionary<string, object>
+                            {
+                                { "action", "scan_capture_ready" },
+                                { "args", new Dictionary<string, object> { { "id", capId }, { "error", "" } } }
+                            });
                         });
+                    }
+                    else if (evName == "scan-progress")
+                    {
+                        string stage = ev.ContainsKey("stage") ? Convert.ToString(ev["stage"]) : "";
+                        if (stage == "complete" || stage == "error" || stage == "cancelled")
+                        {
+                            RestorePanelAfterScan();
+                            var unused = RefreshJianyingStatusAsync();
+                        }
                     }
                     else if (evName == "recording-capture" && ev.ContainsKey("id") && ev.ContainsKey("token"))
                     {
@@ -2703,7 +2728,7 @@ namespace XMStudioHost
                     ShowInTaskbar = false,
                     TopMost = true,
                     StartPosition = FormStartPosition.Manual,
-                    Size = new Size(430, 650),
+                    Size = new Size(390, 420),
                     BackColor = Color.FromArgb(16, 20, 26),
                     Icon = LoadAppIcon(),
                 };
@@ -2916,7 +2941,24 @@ namespace XMStudioHost
             if (action == "wm-cancel") { await CancelWatermarkBatchAsync(); return BroadcastCompanionState(); }
             if (action == "wm-open") { OpenExplorerPath(Convert.ToString(value)); return BroadcastCompanionState(); }
             if (action == "jy-wizard") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "wizard" } }); return BroadcastCompanionState(); }
-            if (action == "jy-scan") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "scan" } }); return BroadcastCompanionState(); }
+            if (action == "jy-scan")
+            {
+                HidePanelForScan(false);
+                try { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "scan" } }); }
+                catch { RestorePanelAfterScan(); throw; }
+                return BroadcastCompanionState();
+            }
+            if (action == "jy-clear-rename-files")
+            {
+                _renameFiles.Clear();
+                await HandleJianyingActionAsync(new Dictionary<string, object>
+                {
+                    { "action", "files" },
+                    { "args", new Dictionary<string, object> { { "files", new string[0] } } }
+                });
+                return BroadcastCompanionState();
+            }
+            if (action == "wm-clear") { ClearWatermarkJobs("all"); return BroadcastCompanionState(); }
             if (action == "jy-export")
             {
                 var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
@@ -3117,8 +3159,76 @@ namespace XMStudioHost
 
         private void TickCompanion()
         {
+            // 引擎后台任务（如识别截图）进行中时主动轮询状态，防止 busy 标志卡死。
+            if (IsJianyingBusy()) { var unused = RefreshJianyingStatusAsync(); }
+            else if (_panelHiddenForScan) RestorePanelAfterScan();
             if (!_companionVisible || _orbForm == null || _orbForm.IsDisposed) return;
             BroadcastCompanionState();
+        }
+
+        private bool IsJianyingBusy()
+        {
+            var jy = _lastJianyingState;
+            if (jy == null) return false;
+            try { return jy.ContainsKey("busy") && Convert.ToBoolean(jy["busy"]); } catch { return false; }
+        }
+
+        private async Task RefreshJianyingStatusAsync()
+        {
+            if (_jianyingRpc == null) return;
+            if (Interlocked.Exchange(ref _jyStatusPolling, 1) == 1) return;
+            try
+            {
+                var res = await _jianyingRpc.CallAsync(new Dictionary<string, object> { { "action", "status" }, { "args", new Dictionary<string, object>() } }, 5000);
+                if (res != null && res.ContainsKey("state") && res["state"] is Dictionary<string, object>)
+                {
+                    _lastJianyingState = (Dictionary<string, object>)res["state"];
+                    SendEventToMain("bos:jianying-state", _lastJianyingState);
+                    if (!IsJianyingBusy()) RestorePanelAfterScan();
+                    BroadcastCompanionState();
+                }
+            }
+            catch { }
+            finally { Interlocked.Exchange(ref _jyStatusPolling, 0); }
+        }
+
+        private void RunOnUi(Action action, bool wait)
+        {
+            if (_mainForm == null || _mainForm.IsDisposed) return;
+            try
+            {
+                if (!_mainForm.InvokeRequired) { action(); return; }
+                if (wait) _mainForm.Invoke(action);
+                else _mainForm.BeginInvoke(action);
+            }
+            catch { }
+        }
+
+        private void HidePanelForScan(bool wait)
+        {
+            RunOnUi(() =>
+            {
+                if (_panelForm != null && !_panelForm.IsDisposed && _panelForm.Visible)
+                {
+                    _panelHiddenForScan = true;
+                    _panelForm.Hide();
+                }
+            }, wait);
+        }
+
+        private void RestorePanelAfterScan()
+        {
+            if (!_panelHiddenForScan) return;
+            RunOnUi(() =>
+            {
+                if (!_panelHiddenForScan) return;
+                _panelHiddenForScan = false;
+                if (_panelOpen && _companionVisible && _panelForm != null && !_panelForm.IsDisposed)
+                {
+                    PlaceCompanionPanel();
+                    _panelForm.Show();
+                }
+            }, false);
         }
 
         // ======================== Music Library & Materials ========================

@@ -245,6 +245,57 @@ function extractText(protocol, payload) {
   return "";
 }
 
+async function requestProviderModels(provider, timeoutMs = 30_000) {
+  if (!provider || typeof provider !== "object") {
+    throw Object.assign(new Error("找不到供应商配置。"), { status: 400 });
+  }
+  if (!provider.apiKey?.trim()) {
+    throw Object.assign(new Error("请先填写 API 密钥。"), { status: 400 });
+  }
+  const protocol = provider.protocol || "openai";
+  if (protocol === "gemini") {
+    const rawBaseUrl = (!provider.baseUrl || !String(provider.baseUrl).trim())
+      ? "https://generativelanguage.googleapis.com/v1beta"
+      : provider.baseUrl;
+    const url = endpointUrl(rawBaseUrl, "/models");
+    url.searchParams.set("key", provider.apiKey.trim());
+    const headers = {
+      "Content-Type": "application/json",
+      "x-goog-api-key": provider.apiKey.trim(),
+    };
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const { payload } = await readUpstreamResponse(response, provider.apiKey, "拉取 Gemini 模型列表");
+    const rawModels = Array.isArray(payload?.models) ? payload.models : [];
+    const filtered = rawModels
+      .filter((m) => !m.supportedGenerationMethods || m.supportedGenerationMethods.includes("generateContent"))
+      .map((m) => (m.name || "").replace(/^models\//, ""))
+      .filter(Boolean);
+    filtered.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+    return [...new Set(filtered)];
+  } else {
+    const url = endpointUrl(provider.baseUrl, "/models");
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${provider.apiKey.trim()}`,
+    };
+    const response = await fetch(url, {
+      method: "GET",
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const { payload } = await readUpstreamResponse(response, provider.apiKey, "拉取模型列表");
+    const list = (Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.models) ? payload.models : [])
+      .map((m) => (typeof m === "string" ? m : m.id || m.name || ""))
+      .filter(Boolean);
+    list.sort((a, b) => b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" }));
+    return [...new Set(list)];
+  }
+}
+
 async function requestProvider(provider, model, messages, timeoutMs = 120_000) {
   validateProvider(provider, model);
   const { url, headers, body } = buildProviderRequest(provider, model, messages);
@@ -556,6 +607,11 @@ export async function handleApi(req, res) {
     }
     const result = await requestProvider(body.provider, body.model, scoreMessages(input), 120_000);
     return json(res, 200, { score: parseScoreResponse(result.text, input.durationSeconds) });
+  }
+
+  if (req.url === "/api/providers/models") {
+    const models = await requestProviderModels(body.provider);
+    return json(res, 200, { ok: true, models });
   }
 
   if (req.url === "/api/providers/test") {

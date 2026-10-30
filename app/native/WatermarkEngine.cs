@@ -252,8 +252,8 @@ namespace XMWatermark
 
     internal struct SparsePixel
     {
-        public int OffsetTopDown;
-        public int OffsetBottomUp;
+        public ushort X;
+        public ushort Y;
         public byte PremulB;
         public byte PremulG;
         public byte PremulR;
@@ -322,7 +322,6 @@ namespace XMWatermark
                     for (int y = 0; y < height; y++)
                     {
                         int rowTopDown = y * stride;
-                        int rowBottomUp = (height - 1 - y) * stride;
                         for (int x = 0; x < width; x++)
                         {
                             int idx = rowTopDown + x * 4;
@@ -333,8 +332,8 @@ namespace XMWatermark
                             byte r = raw[idx + 2];
                             list.Add(new SparsePixel
                             {
-                                OffsetTopDown = idx,
-                                OffsetBottomUp = rowBottomUp + x * 4,
+                                X = (ushort)x,
+                                Y = (ushort)y,
                                 PremulB = (byte)((b * a + 127) / 255),
                                 PremulG = (byte)((gr * a + 127) / 255),
                                 PremulR = (byte)((r * a + 127) / 255),
@@ -427,17 +426,21 @@ namespace XMWatermark
             g.DrawImage(wm, rect, 0, 0, wm.Width, wm.Height, GraphicsUnit.Pixel, ia);
         }
 
-        public void ApplyToBuffer(IntPtr bufferPtr, uint bufferLen, bool bottomUp)
+        public void ApplyToBuffer(IntPtr bufferPtr, uint bufferLen, int stride, bool bottomUp)
         {
+            int absStride = Math.Abs(stride);
+            if (absStride < Width * 4) absStride = Width * 4;
             int maxByteOffset = (int)bufferLen - 4;
+            if (maxByteOffset < 0) return;
             int len = Pixels.Length;
             if (bottomUp)
             {
                 for (int i = 0; i < len; i++)
                 {
                     SparsePixel p = Pixels[i];
-                    if (p.OffsetBottomUp > maxByteOffset) continue;
-                    IntPtr px = IntPtr.Add(bufferPtr, p.OffsetBottomUp);
+                    int offset = (Height - 1 - p.Y) * absStride + p.X * 4;
+                    if (offset < 0 || offset > maxByteOffset) continue;
+                    IntPtr px = IntPtr.Add(bufferPtr, offset);
                     byte b = Marshal.ReadByte(px, 0);
                     byte g = Marshal.ReadByte(px, 1);
                     byte r = Marshal.ReadByte(px, 2);
@@ -451,8 +454,9 @@ namespace XMWatermark
                 for (int i = 0; i < len; i++)
                 {
                     SparsePixel p = Pixels[i];
-                    if (p.OffsetTopDown > maxByteOffset) continue;
-                    IntPtr px = IntPtr.Add(bufferPtr, p.OffsetTopDown);
+                    int offset = p.Y * absStride + p.X * 4;
+                    if (offset < 0 || offset > maxByteOffset) continue;
+                    IntPtr px = IntPtr.Add(bufferPtr, offset);
                     byte b = Marshal.ReadByte(px, 0);
                     byte g = Marshal.ReadByte(px, 1);
                     byte r = Marshal.ReadByte(px, 2);
@@ -552,30 +556,32 @@ namespace XMWatermark
                 try { nativeVideoType.GetUINT64(ref MFInterop.MF_MT_FRAME_RATE, out packedRate); } catch { }
                 Marshal.ReleaseComObject(nativeVideoType);
 
-                uint outW, outH;
-                ComputeOutputSize(inW, inH, sizePreset, out outW, out outH);
-
                 IMFMediaType decodeVideoType;
                 MFInterop.MFCreateMediaType(out decodeVideoType);
                 decodeVideoType.SetGUID(ref MFInterop.MF_MT_MAJOR_TYPE, ref MFInterop.MFMediaType_Video);
                 decodeVideoType.SetGUID(ref MFInterop.MF_MT_SUBTYPE, ref MFInterop.MFVideoFormat_RGB32);
-                decodeVideoType.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));
-                try
-                {
-                    reader.SetCurrentMediaType(MFInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, IntPtr.Zero, decodeVideoType);
-                }
-                catch
-                {
-                    outW = (inW / 2) * 2;
-                    outH = (inH / 2) * 2;
-                    decodeVideoType.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));
-                    reader.SetCurrentMediaType(MFInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, IntPtr.Zero, decodeVideoType);
-                }
+                reader.SetCurrentMediaType(MFInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, IntPtr.Zero, decodeVideoType);
                 Marshal.ReleaseComObject(decodeVideoType);
 
                 IMFMediaType actualVideoIn;
                 reader.GetCurrentMediaType(MFInterop.MF_SOURCE_READER_FIRST_VIDEO_STREAM, out actualVideoIn);
-                int defaultStride = (int)(outW * 4);
+                try
+                {
+                    ulong actualPackedSize;
+                    actualVideoIn.GetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, out actualPackedSize);
+                    uint decW, decH;
+                    MFInterop.Unpack2UInt32(actualPackedSize, out decW, out decH);
+                    if (decW > 0 && decH > 0)
+                    {
+                        inW = decW;
+                        inH = decH;
+                    }
+                }
+                catch { }
+                uint outW = (inW / 2) * 2;
+                uint outH = (inH / 2) * 2;
+
+                int defaultStride = (int)(inW * 4);
                 try
                 {
                     uint uStride;
@@ -584,30 +590,60 @@ namespace XMWatermark
                 }
                 catch { }
                 bool bottomUp = defaultStride < 0;
-
-                MFInterop.MFCreateAttributes(out writerAttr, 2);
-                writerAttr.SetUINT32(ref MFInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1);
-                MFInterop.MFCreateSinkWriterFromURL(Path.GetFullPath(tempOutput), IntPtr.Zero, writerAttr, out writer);
+                Marshal.ReleaseComObject(actualVideoIn);
 
                 // Configure H.264 Output Stream (bitrate scaling aligned with Kirota233/watermarker: 12Mbps / 5Mbps / 2Mbps @ 1080p)
-                IMFMediaType videoOut;
-                MFInterop.MFCreateMediaType(out videoOut);
-                videoOut.SetGUID(ref MFInterop.MF_MT_MAJOR_TYPE, ref MFInterop.MFMediaType_Video);
-                videoOut.SetGUID(ref MFInterop.MF_MT_SUBTYPE, ref MFInterop.MFVideoFormat_H264);
                 double baseBitrate = qualityCrf <= 18 ? 12000000.0 : (qualityCrf >= 28 ? 2000000.0 : 5000000.0);
                 double areaRatio = (double)(outW * outH) / (1920.0 * 1080.0);
                 uint bitrate = (uint)Math.Max(500000, Math.Min(30000000, Math.Round(baseBitrate * areaRatio)));
-                videoOut.SetUINT32(ref MFInterop.MF_MT_AVG_BITRATE, bitrate);
-                videoOut.SetUINT32(ref MFInterop.MF_MT_INTERLACE_MODE, 2); // Progressive
-                videoOut.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));
-                videoOut.SetUINT64(ref MFInterop.MF_MT_FRAME_RATE, packedRate);
-                videoOut.SetUINT64(ref MFInterop.MF_MT_PIXEL_ASPECT_RATIO, MFInterop.Pack2UInt32(1, 1));
 
-                uint videoSinkStream;
-                writer.AddStream(videoOut, out videoSinkStream);
-                writer.SetInputMediaType(videoSinkStream, actualVideoIn, null);
-                Marshal.ReleaseComObject(videoOut);
-                Marshal.ReleaseComObject(actualVideoIn);
+                uint videoSinkStream = 0;
+                for (int hwAttempt = 0; hwAttempt < 2; hwAttempt++)
+                {
+                    if (writer != null) { try { Marshal.ReleaseComObject(writer); } catch { } writer = null; }
+                    if (writerAttr != null) { try { Marshal.ReleaseComObject(writerAttr); } catch { } writerAttr = null; }
+                    MFInterop.MFCreateAttributes(out writerAttr, 2);
+                    if (hwAttempt == 0)
+                    {
+                        writerAttr.SetUINT32(ref MFInterop.MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1);
+                    }
+                    MFInterop.MFCreateSinkWriterFromURL(Path.GetFullPath(tempOutput), IntPtr.Zero, writerAttr, out writer);
+
+                    IMFMediaType videoOut;
+                    MFInterop.MFCreateMediaType(out videoOut);
+                    videoOut.SetGUID(ref MFInterop.MF_MT_MAJOR_TYPE, ref MFInterop.MFMediaType_Video);
+                    videoOut.SetGUID(ref MFInterop.MF_MT_SUBTYPE, ref MFInterop.MFVideoFormat_H264);
+                    videoOut.SetUINT32(ref MFInterop.MF_MT_AVG_BITRATE, bitrate);
+                    videoOut.SetUINT32(ref MFInterop.MF_MT_INTERLACE_MODE, 2); // Progressive
+                    videoOut.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));
+                    videoOut.SetUINT64(ref MFInterop.MF_MT_FRAME_RATE, packedRate);
+                    videoOut.SetUINT64(ref MFInterop.MF_MT_PIXEL_ASPECT_RATIO, MFInterop.Pack2UInt32(1, 1));
+
+                    IMFMediaType cleanVideoIn;
+                    MFInterop.MFCreateMediaType(out cleanVideoIn);
+                    cleanVideoIn.SetGUID(ref MFInterop.MF_MT_MAJOR_TYPE, ref MFInterop.MFMediaType_Video);
+                    cleanVideoIn.SetGUID(ref MFInterop.MF_MT_SUBTYPE, ref MFInterop.MFVideoFormat_RGB32);
+                    cleanVideoIn.SetUINT32(ref MFInterop.MF_MT_INTERLACE_MODE, 2);
+                    cleanVideoIn.SetUINT64(ref MFInterop.MF_MT_FRAME_SIZE, MFInterop.Pack2UInt32(outW, outH));
+                    cleanVideoIn.SetUINT64(ref MFInterop.MF_MT_FRAME_RATE, packedRate);
+                    cleanVideoIn.SetUINT64(ref MFInterop.MF_MT_PIXEL_ASPECT_RATIO, MFInterop.Pack2UInt32(1, 1));
+                    cleanVideoIn.SetUINT32(ref MFInterop.MF_MT_DEFAULT_STRIDE, (uint)defaultStride);
+
+                    try
+                    {
+                        writer.AddStream(videoOut, out videoSinkStream);
+                        writer.SetInputMediaType(videoSinkStream, cleanVideoIn, null);
+                        Marshal.ReleaseComObject(videoOut);
+                        Marshal.ReleaseComObject(cleanVideoIn);
+                        break;
+                    }
+                    catch
+                    {
+                        Marshal.ReleaseComObject(videoOut);
+                        Marshal.ReleaseComObject(cleanVideoIn);
+                        if (hwAttempt == 1) throw;
+                    }
+                }
 
                 // Configure Optional Audio Stream
                 bool hasAudio = false;
@@ -705,7 +741,7 @@ namespace XMWatermark
                                 buf.Lock(out ptr, out maxLen, out curLen);
                                 try
                                 {
-                                    overlay.ApplyToBuffer(ptr, curLen, bottomUp);
+                                    overlay.ApplyToBuffer(ptr, curLen, defaultStride, bottomUp);
                                 }
                                 finally
                                 {
@@ -785,6 +821,25 @@ namespace XMWatermark
             {
                 Send(new Dictionary<string, object> { { "ok", true }, { "engine", "windows-media-foundation-hw" } });
                 return 0;
+            }
+            if (args.Length >= 3 && args[0] == "--test-file")
+            {
+                MFInterop.MFStartup(MFInterop.MF_VERSION, MFInterop.MFSTARTUP_NOSOCKET);
+                try
+                {
+                    VideoTranscoder.ProcessVideo(args[1], args[2], "builtin", "", "fullscreen", 1.0, 1.0, "original", 23, pct => { }, () => false);
+                    Console.Out.WriteLine("SUCCESS");
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    Console.Out.WriteLine("ERR: " + ex.ToString());
+                    return 1;
+                }
+                finally
+                {
+                    MFInterop.MFShutdown();
+                }
             }
 
             MFInterop.MFStartup(MFInterop.MF_VERSION, MFInterop.MFSTARTUP_NOSOCKET);

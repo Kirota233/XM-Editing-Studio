@@ -71,6 +71,37 @@ internal static class NativeWin32
     public const int VK_F9 = 0x78;
     public const int VK_F10 = 0x79;
 
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    public static extern bool AllowSetForegroundWindow(int dwProcessId);
+
+    public static bool ActivateJianyingWindow()
+    {
+        try
+        {
+            foreach (Process p in Process.GetProcessesByName("JianyingPro"))
+            {
+                using (p)
+                {
+                    IntPtr hwnd = p.MainWindowHandle;
+                    if (hwnd == IntPtr.Zero) continue;
+                    if (IsIconic(hwnd)) ShowWindow(hwnd, 9); // SW_RESTORE
+                    // 模拟一次 Alt 键以解除前台锁定限制，再激活窗口。
+                    keybd_event(0x12, 0, 0, UIntPtr.Zero);
+                    keybd_event(0x12, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                    return SetForegroundWindow(hwnd);
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
     public static string GetForegroundProcessName()
     {
         try
@@ -797,6 +828,8 @@ internal sealed partial class JianYingEngine
                     _busy = false;
                     _exportActive = false;
                 }
+                // 后台任务结束时主动推送最新状态，避免宿主的 busy 标志永远停留在 true（识别截图卡住）。
+                try { Send(new Dictionary<string, object> { { "event", "state" }, { "state", Snapshot() } }); } catch { }
             }
         });
     }
@@ -818,6 +851,15 @@ internal sealed partial class JianYingEngine
     private void RequireJianyingForeground()
     {
         string proc = NativeWin32.GetForegroundProcessName();
+        if (!string.Equals(proc, "jianyingpro.exe", StringComparison.OrdinalIgnoreCase))
+        {
+            // 悬浮窗（小马剪辑台.exe）可能处于前台：先尝试主动激活正在运行的剪映主窗口再复查。
+            if (NativeWin32.ActivateJianyingWindow())
+            {
+                Thread.Sleep(250);
+                proc = NativeWin32.GetForegroundProcessName();
+            }
+        }
         if (!string.Equals(proc, "jianyingpro.exe", StringComparison.OrdinalIgnoreCase))
         {
             string shown = string.IsNullOrEmpty(proc) ? "未知程序" : proc;
@@ -1143,39 +1185,62 @@ internal sealed partial class JianYingEngine
 
     private void RegexPreview(string folder, string template)
     {
-        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+        bool useSelected = string.IsNullOrWhiteSpace(folder) && _selectedFiles != null && _selectedFiles.Count > 0;
+        if (!useSelected && (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder)))
         {
-            throw new InvalidOperationException("请选择存在的目标文件夹。");
+            throw new InvalidOperationException("请先拖入/选择文件，或选择存在的目标文件夹。");
         }
-        Match m = Regex.Match(template, @"\d+");
+        Match m = Regex.Match(template ?? "", @"\d+");
         if (!m.Success)
         {
             throw new InvalidOperationException("模板必须包含一个数字，例如：短剧名称_第1集");
         }
         string prefix = template.Substring(0, m.Index);
         string suffix = template.Substring(m.Index + m.Length);
+        int startEp;
+        if (!int.TryParse(m.Value, out startEp)) startEp = 1;
         string[] exts = new[] { ".mp4", ".srt", ".mp3", ".wav", ".mkv" };
 
-        var files = Directory.GetFiles(folder)
-            .Select(f => new FileInfo(f))
-            .Where(fi => exts.Contains(fi.Extension.ToLowerInvariant()))
+        IEnumerable<FileInfo> source = useSelected
+            ? _selectedFiles.Where(File.Exists).Select(f => new FileInfo(f))
+            : Directory.GetFiles(folder).Select(f => new FileInfo(f)).Where(fi => exts.Contains(fi.Extension.ToLowerInvariant()));
+        var files = source
             .OrderBy(fi => Regex.IsMatch(Path.GetFileNameWithoutExtension(fi.Name), @"\(\d+\)\s*$") ? 1 : 0)
             .ThenBy(fi => fi.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        if (useSelected && files.Count == 0)
+        {
+            throw new InvalidOperationException("拖入的文件已不存在，请重新选择。");
+        }
 
         var plan = new List<Dictionary<string, object>>();
         var usedTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var fi in files)
+        for (int idx = 0; idx < files.Count; idx++)
         {
+            var fi = files[idx];
             string stem = Path.GetFileNameWithoutExtension(fi.Name);
             int? ep = ExtractEpisodeNumber(stem);
-            if (!ep.HasValue) continue;
-            string newName = prefix + ep.Value + suffix + fi.Extension;
-            if (!usedTargets.Add(newName)) continue;
+            string newName = ep.HasValue ? (prefix + ep.Value + suffix + fi.Extension) : null;
+            string targetKey = newName == null ? null : Path.Combine(fi.DirectoryName, newName);
+            if (newName == null || usedTargets.Contains(targetKey))
+            {
+                // 拖入文件模式：未提取到集数或集数冲突时，按模板起始数字顺序递增，保证每个文件都有预览项。
+                if (!useSelected) continue;
+                int candidate = startEp + idx;
+                newName = prefix + candidate + suffix + fi.Extension;
+                targetKey = Path.Combine(fi.DirectoryName, newName);
+                while (usedTargets.Contains(targetKey))
+                {
+                    candidate++;
+                    newName = prefix + candidate + suffix + fi.Extension;
+                    targetKey = Path.Combine(fi.DirectoryName, newName);
+                }
+            }
+            usedTargets.Add(targetKey);
             plan.Add(new Dictionary<string, object>
             {
                 { "source", fi.FullName },
-                { "target", Path.Combine(fi.DirectoryName, newName) },
+                { "target", targetKey },
                 { "old_name", fi.Name },
                 { "new_name", newName },
                 { "mode", "正则匹配" }
