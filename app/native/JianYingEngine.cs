@@ -281,7 +281,7 @@ internal sealed partial class JianYingEngine
     private string _recordingTemplatePath = null;
 
     private string _exportMode = "return_home";
-    private readonly Dictionary<string, double> _stepWaits = new Dictionary<string, double>
+    private readonly Dictionary<string, double> _stepWaitsReturnHome = new Dictionary<string, double>
     {
         { "open_draft", 8.0 },
         { "export", 3.0 },
@@ -290,6 +290,19 @@ internal sealed partial class JianYingEngine
         { "close_btn", 2.0 },
         { "draft_close", 1.5 }
     };
+    private readonly Dictionary<string, double> _stepWaitsWaitClose = new Dictionary<string, double>
+    {
+        { "open_draft", 8.0 },
+        { "export", 3.0 },
+        { "confirm", 1.0 },
+        { "popup_close", 1.5 },
+        { "close_btn", 2.0 },
+        { "draft_close", 1.5 }
+    };
+    private Dictionary<string, double> ActiveStepWaits
+    {
+        get { return _exportMode == "wait_close" ? _stepWaitsWaitClose : _stepWaitsReturnHome; }
+    }
 
     private Dictionary<string, int[]> _coords = new Dictionary<string, int[]>
     {
@@ -413,10 +426,10 @@ internal sealed partial class JianYingEngine
             string mode = data.ContainsKey("export_mode") ? Convert.ToString(data["export_mode"]) : "";
             _exportMode = (mode == "return_home" || mode == "wait_close") ? mode : "return_home";
 
-            if (data.ContainsKey("step_waits") && data["step_waits"] is IDictionary)
+            if (data.ContainsKey("step_waits_return_home") && data["step_waits_return_home"] is IDictionary)
             {
-                var waits = (IDictionary)data["step_waits"];
-                foreach (var key in _stepWaits.Keys.ToList())
+                var waits = (IDictionary)data["step_waits_return_home"];
+                foreach (var key in _stepWaitsReturnHome.Keys.ToList())
                 {
                     if (waits.Contains(key))
                     {
@@ -424,7 +437,41 @@ internal sealed partial class JianYingEngine
                         if (double.TryParse(Convert.ToString(waits[key], CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out val)
                             && !double.IsNaN(val) && !double.IsInfinity(val) && val >= 0.1 && val <= 600.0)
                         {
-                            _stepWaits[key] = Math.Round(val, 1);
+                            _stepWaitsReturnHome[key] = Math.Round(val, 1);
+                        }
+                    }
+                }
+            }
+            if (data.ContainsKey("step_waits_wait_close") && data["step_waits_wait_close"] is IDictionary)
+            {
+                var waits = (IDictionary)data["step_waits_wait_close"];
+                foreach (var key in _stepWaitsWaitClose.Keys.ToList())
+                {
+                    if (waits.Contains(key))
+                    {
+                        double val;
+                        if (double.TryParse(Convert.ToString(waits[key], CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out val)
+                            && !double.IsNaN(val) && !double.IsInfinity(val) && val >= 0.1 && val <= 600.0)
+                        {
+                            _stepWaitsWaitClose[key] = Math.Round(val, 1);
+                        }
+                    }
+                }
+            }
+            else if (data.ContainsKey("step_waits") && data["step_waits"] is IDictionary)
+            {
+                var waits = (IDictionary)data["step_waits"];
+                foreach (var key in _stepWaitsReturnHome.Keys.ToList())
+                {
+                    if (waits.Contains(key))
+                    {
+                        double val;
+                        if (double.TryParse(Convert.ToString(waits[key], CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out val)
+                            && !double.IsNaN(val) && !double.IsInfinity(val) && val >= 0.1 && val <= 600.0)
+                        {
+                            double rounded = Math.Round(val, 1);
+                            _stepWaitsReturnHome[key] = rounded;
+                            _stepWaitsWaitClose[key] = rounded;
                         }
                     }
                 }
@@ -447,7 +494,9 @@ internal sealed partial class JianYingEngine
             var payload = new Dictionary<string, object>
             {
                 { "export_mode", _exportMode },
-                { "step_waits", _stepWaits },
+                { "step_waits_return_home", _stepWaitsReturnHome },
+                { "step_waits_wait_close", _stepWaitsWaitClose },
+                { "step_waits", ActiveStepWaits },
                 { "template", !string.IsNullOrEmpty(_activeTemplatePath) ? Path.GetFileName(_activeTemplatePath) : "" },
                 { "draft_dir", _draftDir ?? "" },
                 { "subtitle_output", _subtitleOutput ?? "" }
@@ -669,7 +718,9 @@ internal sealed partial class JianYingEngine
                 { "exportProgress", _exportProgress == null ? null : new Dictionary<string, object>(_exportProgress) },
                 { "exporting", _exportActive },
                 { "mode", _exportMode },
-                { "waits", new Dictionary<string, double>(_stepWaits) },
+                { "waits", new Dictionary<string, double>(ActiveStepWaits) },
+                { "waitsReturnHome", new Dictionary<string, double>(_stepWaitsReturnHome) },
+                { "waitsWaitClose", new Dictionary<string, double>(_stepWaitsWaitClose) },
                 { "templates", templates },
                 { "templateId", tplId },
                 { "resolution", GetScreenResolution() },
@@ -1061,7 +1112,7 @@ internal sealed partial class JianYingEngine
             lock (_lock)
             {
                 _exportActive = true;
-                waits = new Dictionary<string, double>(_stepWaits);
+                waits = new Dictionary<string, double>(ActiveStepWaits);
                 drafts = _drafts.ToList();
                 coords = new Dictionary<string, int[]>(_coords);
             }
@@ -1996,7 +2047,9 @@ internal sealed partial class JianYingEngine
                 {
                     var w = args["waits"] as IDictionary;
                     if (w == null) throw new InvalidOperationException("等待时间应为 0.1–600 秒。");
-                    foreach (var key in _stepWaits.Keys.ToList())
+                    string targetMode = args.Contains("targetMode") ? Convert.ToString(args["targetMode"]) : _exportMode;
+                    var targetDict = targetMode == "wait_close" ? _stepWaitsWaitClose : _stepWaitsReturnHome;
+                    foreach (var key in targetDict.Keys.ToList())
                     {
                         if (w.Contains(key))
                         {
@@ -2006,7 +2059,7 @@ internal sealed partial class JianYingEngine
                             {
                                 throw new InvalidOperationException("等待时间应为 0.1–600 秒。");
                             }
-                            _stepWaits[key] = Math.Round(val, 1);
+                            targetDict[key] = Math.Round(val, 1);
                         }
                     }
                 }

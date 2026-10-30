@@ -408,6 +408,18 @@ function panelHtml(acrylic) {
   .job { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #d7dde5; padding: 4px 6px; border-radius: 7px; background: rgba(0,0,0,.2); }
   .job span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .job b { font-weight: 600; color: #aab3bf; } .job b.done { color: #8ee06b; } .job b.err { color: #fca5a5; } .job b.run { color: #ffcf6e; }
+  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 9999;
+    background: rgba(10, 14, 20, 0.78); backdrop-filter: blur(5px);
+    display: flex; align-items: center; justify-content: center; padding: 14px; animation: pop .18s ease-out; }
+  .modal-overlay[hidden] { display: none !important; }
+  .modal-dialog { width: 100%; max-width: 330px; background: #1a202c; border: 1px solid rgba(255,207,110,.45);
+    border-radius: 13px; padding: 13px 14px; box-shadow: 0 16px 36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 8px; }
+
+  details.sub-panel.log-panel { border-top: 1px solid rgba(255,255,255,.09); padding-top: 7px; margin-top: auto; }
+  summary.log-summary { font-size: 11px; font-weight: 700; color: #d7dde5; cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; user-select: none; }
+  summary.log-summary .summary-title { display: flex; align-items: center; gap: 5px; }
+  summary.log-summary .log-arrow { font-size: 9px; color: #ffcf6e; transition: transform .18s ease; display: inline-block; }
+  details[open] summary.log-summary .log-arrow { transform: rotate(90deg); }
   .modal { border-color: #ffcf6e; background: rgba(255,207,110,.14); }
   .modal p { font-size: 11px; line-height: 1.55; white-space: pre-wrap; }
   .toast { position: fixed; left: 12px; right: 12px; bottom: 48px; padding: 8px 10px; border-radius: 10px; font-size: 11px;
@@ -440,15 +452,46 @@ function panelHtml(acrylic) {
     </button>
   </nav>
 
-  <div class="scroll">
-    <div class="card modal" id="modalCard" hidden>
-      <div class="title" id="modalTitle">确认操作</div>
-      <p id="modalMsg"></p>
+  <!-- Confirmation Modal Overlay -->
+  <div class="modal-overlay" id="modalCard" hidden>
+    <div class="modal-dialog">
+      <div class="title" id="modalTitle" style="font-size:13px;font-weight:750;color:#ffcf6e">⚠️ 安全确认</div>
+      <p id="modalMsg" style="font-size:11.5px;line-height:1.6;color:#e2e8f0;white-space:pre-wrap;margin:4px 0 8px"></p>
       <div class="grid">
         <button class="btn" id="modalNo">取消</button>
         <button class="btn primary" id="modalYes">确认执行</button>
       </div>
     </div>
+  </div>
+
+  <!-- Wait Times Modal Overlay -->
+  <div class="modal-overlay" id="waitsModalOverlay" hidden>
+    <div class="modal-dialog">
+      <div class="row" style="align-items:flex-start">
+        <div>
+          <div class="title" style="font-size:12.5px;font-weight:750;color:#ffcf6e">⏱️ 导出步骤等待时间参数</div>
+          <div style="font-size:10px;color:#94a3b8;margin-top:2px">
+            <span id="waitsModeLabel" style="color:#ffcf6e;font-weight:700">收起至首页 · 后台</span> · 两种模式独立记忆
+          </div>
+        </div>
+        <button class="btn" id="jyCloseWaitsModalTop" style="padding:2px 6px;font-size:11px;min-width:0">✕</button>
+      </div>
+      <div class="waits-grid" style="margin-top:6px">
+        <label><span>打开草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_open_draft" value="8"></label>
+        <label><span>点击导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_export" value="3"></label>
+        <label><span>确认导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_confirm" value="1"></label>
+        <label><span>收起首页(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_popup_close" value="1.5"></label>
+        <label><span>关闭窗口(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_close_btn" value="2"></label>
+        <label><span>关闭草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_draft_close" value="1.5"></label>
+      </div>
+      <div class="grid" style="margin-top:8px">
+        <button class="btn" id="jyCloseWaitsModal">取消</button>
+        <button class="btn primary" id="jySaveWaitsModal">保存当前模式参数</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll">
 
     <!-- STAGE 01: 批量导出 -->
     <div class="card" id="stageExport">
@@ -502,21 +545,16 @@ function panelHtml(acrylic) {
               <option value="">自动选用已配置的 Gemini 模型</option>
             </select>
           </label>
-          <div class="waits-grid">
-            <label><span>打开草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_open_draft" value="3"></label>
-            <label><span>点击导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_export" value="1"></label>
-            <label><span>确认导出(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_confirm" value="2"></label>
-            <label><span>收起首页(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_popup_close" value="3"></label>
-            <label><span>关闭窗口(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_close_btn" value="2"></label>
-            <label><span>关闭草稿(s)</span><input type="number" step="0.1" min="0.1" class="input" id="w_draft_close" value="2"></label>
-          </div>
-          <button class="btn" id="jySaveWaits">保存等待时间参数</button>
+          <button class="btn" id="jyOpenWaitsModal" type="button" style="padding:6px 10px;font-size:11px">⏱️ 调整等待时间参数</button>
         </div>
       </details>
 
-      <details class="sub-panel">
-        <summary><span>运行日志</span><span id="jyLogCount">0 条</span></summary>
-        <div class="log" id="jyLog" style="margin-top:6px">等待指令…</div>
+      <details class="sub-panel log-panel" open>
+        <summary class="log-summary">
+          <span class="summary-title"><span class="log-arrow">▸</span> 批量导出日志</span>
+          <span class="log-count" id="jyLogCount_export">0 条</span>
+        </summary>
+        <div class="log" id="jyLog_export" style="margin-top:6px">等待指令…</div>
       </details>
       </div>
     </div>
@@ -544,6 +582,13 @@ function panelHtml(acrylic) {
       </div>
       <button class="btn" id="jyUnhide">恢复所有草稿字幕显示</button>
       <small style="font-size:10px;color:#94a3b8">提示：修改字体或显隐轨道前请先退出剪映，工具会自动备份草稿 JSON。</small>
+      <details class="sub-panel log-panel" open>
+        <summary class="log-summary">
+          <span class="summary-title"><span class="log-arrow">▸</span> 字幕工程日志</span>
+          <span class="log-count" id="jyLogCount_sub">0 条</span>
+        </summary>
+        <div class="log" id="jyLog_sub" style="margin-top:6px">就绪，可提取或恢复草稿字幕…</div>
+      </details>
     </div>
 
     <!-- STAGE 03: 批量改名 -->
@@ -580,6 +625,13 @@ function panelHtml(acrylic) {
           </tbody>
         </table>
       </div>
+      <details class="sub-panel log-panel" open>
+        <summary class="log-summary">
+          <span class="summary-title"><span class="log-arrow">▸</span> 批量改名日志</span>
+          <span class="log-count" id="jyLogCount_rename">0 条</span>
+        </summary>
+        <div class="log" id="jyLog_rename" style="margin-top:6px">就绪，拖入文件后可生成改名预览…</div>
+      </details>
     </div>
 
     <!-- STAGE 04: 样片水印 -->
@@ -601,6 +653,13 @@ function panelHtml(acrylic) {
         <button class="btn" id="wmAdd">＋ 添加视频</button>
         <button class="btn primary" id="wmRun">开始合成</button>
       </div>
+      <details class="sub-panel log-panel" open>
+        <summary class="log-summary">
+          <span class="summary-title"><span class="log-arrow">▸</span> 样片水印日志</span>
+          <span class="log-count" id="jyLogCount_wm">0 条</span>
+        </summary>
+        <div class="log" id="jyLog_wm" style="margin-top:6px">就绪，拖入视频即可批量合成样片…</div>
+      </details>
     </div>
   </div>
 
@@ -751,8 +810,28 @@ function panelHtml(acrylic) {
       $('jyDot').className = 'dot ' + (jyRun ? 'run' : jy.ready ? 'on' : '');
       $('jyMeta').textContent = jy.status || '就绪';
       $('jyGuideBox').textContent = jy.guide || jy.lastLog || '打开剪映首页后，可录制坐标或 AI 扫描草稿列表。';
-      $('jyLog').textContent = Array.isArray(jy.logs) && jy.logs.length ? jy.logs.join('\\n') : (jy.lastLog || '等待指令…');
-      $('jyLogCount').textContent = (Array.isArray(jy.logs) ? jy.logs.length : 0) + ' 条';
+      const allLogs = Array.isArray(jy.logs) ? jy.logs : [];
+      const exportLogs = allLogs.filter(l => !/✓\s+.*\.srt|统一\s+Noto|恢复所有草稿字幕/i.test(l));
+      if ($('jyLog_export')) {
+        $('jyLog_export').textContent = exportLogs.length ? exportLogs.join('\n') : (jy.lastLog || '等待指令…');
+        $('jyLogCount_export').textContent = exportLogs.length + ' 条';
+      }
+      const subLogs = allLogs.filter(l => /字幕|srt|轨道|Noto|草稿/i.test(l));
+      if ($('jyLog_sub')) {
+        $('jyLog_sub').textContent = subLogs.length ? subLogs.join('\n') : '就绪，可提取或恢复草稿字幕…';
+        $('jyLogCount_sub').textContent = subLogs.length + ' 条';
+      }
+      const renameLogs = allLogs.filter(l => /改名|重命名|预览|模板/i.test(l));
+      if ($('jyLog_rename')) {
+        $('jyLog_rename').textContent = renameLogs.length ? renameLogs.join('\n') : (Array.isArray(jy.plan) && jy.plan.length ? '已生成 ' + jy.plan.length + ' 个改名预览项' : '就绪，拖入文件后可生成改名预览…');
+        $('jyLogCount_rename').textContent = renameLogs.length + ' 条';
+      }
+      const jobs = Array.isArray(wm.jobs) ? wm.jobs : [];
+      if ($('jyLog_wm')) {
+        const wmLogs = jobs.map(j => (j.status === 'done' ? '✓ ' : j.status === 'error' ? '✕ ' : '• ') + (j.inputPath ? j.inputPath.split(/[\\/]/).pop() : '视频') + ' → ' + (j.status === 'processing' ? j.progress + '%' : statusText[j.status] || j.status));
+        $('jyLog_wm').textContent = wmLogs.length ? wmLogs.join('\n') : (wm.running ? '正在硬件加速合成样片…' : '就绪，拖入视频即可批量合成样片…');
+        $('jyLogCount_wm').textContent = jobs.length + ' 个任务';
+      }
 
       if (!$('jyWizard').querySelector('.btn-spin')) $('jyWizard').disabled = jyRun || !jy.ready;
       if (!$('jyScan').querySelector('.btn-spin')) $('jyScan').disabled = jyRun || !jy.ready;
@@ -867,18 +946,49 @@ function panelHtml(acrylic) {
     $('jyScan').onclick = () => act('jy-scan', { modelKey: $('jyModelSelect').value }, $('jyScan'), '识别中…');
     $('jyExport').onclick = () => act('jy-export', { index: selectedDraftIdx }, $('jyExport'), '启动导出…');
     $('jyStop').onclick = () => act('jy-stop');
-    $('jyModeSelect').onchange = e => act('jy-settings', { mode: e.target.value });
+    function populateWaitsInputs(mode, waitsData) {
+      const modeWaits = mode === 'wait_close'
+        ? (waitsData?.waitsWaitClose || waitsData?.waits || {})
+        : (waitsData?.waitsReturnHome || waitsData?.waits || {});
+      ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
+        const el = $('w_' + k);
+        if (el && modeWaits[k] !== undefined) el.value = modeWaits[k];
+      });
+      if ($('waitsModeLabel')) {
+        $('waitsModeLabel').textContent = mode === 'wait_close' ? '等待完成 · 逐个' : '收起至首页 · 后台';
+      }
+    }
+
+    $('jyModeSelect').onchange = e => {
+      const newMode = e.target.value;
+      populateWaitsInputs(newMode, state?.jianying);
+      act('jy-settings', { mode: newMode });
+    };
     $('jyTplSelect').onchange = e => e.target.value && act('jy-select-tpl', { id: e.target.value });
+
+    $('jyOpenWaitsModal').onclick = () => {
+      waitsDirty = false;
+      const currentMode = $('jyModeSelect').value || 'return_home';
+      populateWaitsInputs(currentMode, state?.jianying);
+      $('waitsModalOverlay').hidden = false;
+    };
+    const closeWaitsModal = () => { $('waitsModalOverlay').hidden = true; waitsDirty = false; };
+    $('jyCloseWaitsModal').onclick = closeWaitsModal;
+    $('jyCloseWaitsModalTop').onclick = closeWaitsModal;
+
     ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
       $('w_' + k).oninput = () => { waitsDirty = true; };
     });
-    $('jySaveWaits').onclick = () => {
+    $('jySaveWaitsModal').onclick = () => {
+      const currentMode = $('jyModeSelect').value || 'return_home';
       const waits = {};
       ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
         waits[k] = Number($('w_' + k).value) || 1;
       });
       waitsDirty = false;
-      act('jy-settings', { waits }, $('jySaveWaits'), '保存中…');
+      act('jy-settings', { mode: currentMode, targetMode: currentMode, waits }, $('jySaveWaitsModal'), '保存中…');
+      $('waitsModalOverlay').hidden = true;
+      toast('已保存当前模式的等待时间参数 ✨');
     };
 
     const tableWrap = document.querySelector('#stageExport .table-wrap');
