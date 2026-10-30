@@ -232,3 +232,25 @@ test('auto-updater checks GitHub release, verifies SHA-256 on download, and laun
     await fs.rm(root, { recursive: true, force: true });
   }
 });
+
+test('unmarked Spanish dialogues with speaker colon and episode header extract cleanly', () => {
+  const script = `第1集 迷失\nMARÍA: ¡Hola, José! ¿Cómo estás?\nJOSÉ: Muy bien, gracias. ¿Y tú?\n▲ PAUSA\nMARÍA: Espera un momento, por favor.`;
+  const lines = splitScript(script);
+  assert.equal(lines.length, 5);
+  assert.equal(lines[0].language, 'es');
+  assert.equal(lines[0].text, '¡Hola, José!');
+  assert.equal(lines[1].text, '¿Cómo estás?');
+  assert.equal(lines[2].text, 'Muy bien, gracias.');
+  assert.equal(lines[3].text, '¿Y tú?');
+  assert.equal(lines[4].text, 'Espera un momento, por favor.');
+});
+
+test('C# JianYingEngine supports --draft-io-native argument with structured error handling', async () => {
+  if (process.platform !== 'win32') return;
+  const { spawnSync } = await import('node:child_process');
+  const exePath = path.resolve('app/build/jianying/JianYingEngine.exe');
+  const res = spawnSync(exePath, ['--draft-io-native', 'invalid_mode', 'fake_path.json', 'fake_dll.dll'], { encoding: 'utf8', windowsHide: true });
+  assert.equal(res.status, 1);
+  const json = JSON.parse(res.stdout.trim());
+  assert.match(json.error, /无效草稿操作/);
+});

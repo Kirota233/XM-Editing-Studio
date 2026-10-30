@@ -1490,7 +1490,7 @@ internal sealed partial class JianYingEngine
                 if (data == null)
                 {
                     int generation = _operationGeneration;
-                    data = JianYingDraftIO.Request("read", file, null, () => CheckInterrupted(generation));
+                    data = JianYingDraftIO.Request("read", file, null, () => CheckInterrupted(generation), Log);
                     _encryptedDrafts.Add(file);
                 }
                 else _encryptedDrafts.Remove(file);
@@ -1522,7 +1522,7 @@ internal sealed partial class JianYingEngine
             {
                 CheckInterrupted(gen);
                 IDictionary verified;
-                if (_encryptedDrafts.Contains(item.Item1)) verified = JianYingDraftIO.Request("write", item.Item1, _json.Serialize(item.Item2), () => CheckInterrupted(gen));
+                if (_encryptedDrafts.Contains(item.Item1)) verified = JianYingDraftIO.Request("write", item.Item1, _json.Serialize(item.Item2), () => CheckInterrupted(gen), null);
                 else { AtomicWriteJson(item.Item1, item.Item2); verified = _json.DeserializeObject(File.ReadAllText(item.Item1, Encoding.UTF8)) as IDictionary; }
                 if (!SameJson(item.Item2, verified)) throw new InvalidOperationException("草稿写入后校验不一致，已回滚：" + item.Item1);
             }
@@ -1971,6 +1971,7 @@ internal static class Program
         NativeWin32.SetProcessDPIAware();
 
         if (args.Length == 3 && args[0] == "--draft-io") return JianYingDraftIO.Worker(args[1], args[2]);
+        if (args.Length == 4 && args[0] == "--draft-io-native") return JianYingDraftIO.NativeWorker(args[1], args[2], args[3]);
 
         var json = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
         if (args.Length == 1 && args[0] == "--verify-runtime")
