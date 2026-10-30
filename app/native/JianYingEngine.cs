@@ -80,6 +80,63 @@ internal static class NativeWin32
     [DllImport("user32.dll")]
     public static extern bool AllowSetForegroundWindow(int dwProcessId);
 
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    public static IntPtr FindJianyingHwnd()
+    {
+        try
+        {
+            var pids = new HashSet<uint>();
+            foreach (var p in Process.GetProcessesByName("JianyingPro"))
+            {
+                try { pids.Add((uint)p.Id); } catch { }
+                try { p.Dispose(); } catch { }
+            }
+            if (pids.Count == 0) return IntPtr.Zero;
+
+            IntPtr bestHwnd = IntPtr.Zero;
+            int bestArea = 0;
+
+            EnumWindows(delegate(IntPtr hWnd, IntPtr lParam)
+            {
+                if (!IsWindowVisible(hWnd)) return true;
+                uint pid;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pids.Contains(pid))
+                {
+                    RECT r;
+                    if (GetWindowRect(hWnd, out r))
+                    {
+                        int w = r.Right - r.Left;
+                        int h = r.Bottom - r.Top;
+                        if (w > 300 && h > 200)
+                        {
+                            int area = w * h;
+                            if (area > bestArea)
+                            {
+                                bestArea = area;
+                                bestHwnd = hWnd;
+                            }
+                        }
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+
+            return bestHwnd;
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
     public static bool ActivateJianyingWindow()
     {
         try
@@ -264,7 +321,10 @@ internal sealed partial class JianYingEngine
         Directory.CreateDirectory(_dataDir);
         _cfgFile = Path.Combine(_dataDir, "settings.json");
         _deletedTemplateDir = Path.Combine(_dataDir, "deleted_templates");
-        _subtitleOutput = Path.Combine(_dataDir, "字幕导出");
+        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+        if (string.IsNullOrEmpty(desktop) || !Directory.Exists(desktop))
+            desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Desktop");
+        _subtitleOutput = Directory.Exists(desktop) ? desktop : Path.Combine(_dataDir, "字幕导出");
 
         LoadConfig();
         if (!string.IsNullOrEmpty(_activeTemplatePath) && File.Exists(_activeTemplatePath))
@@ -1764,6 +1824,7 @@ internal sealed partial class JianYingEngine
         {
             case "scan":
                 _webScan = args.Contains("webScan") && args["webScan"] is bool && (bool)args["webScan"];
+                _scanModelKey = args.Contains("modelKey") ? Convert.ToString(args["modelKey"]) : null;
                 BeginOperation(RunScopedScan);
                 break;
 

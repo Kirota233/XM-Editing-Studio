@@ -1,6 +1,4 @@
 import { normalizeSubtitlePunctuation } from '../shared/period-text.mjs';
-import { periodKeeperStatusText } from '../shared/subtitle-punctuation.mjs';
-import { usePanelCollapsed } from './PanelState.jsx';
 
 declare const i: any;
 
@@ -16,7 +14,6 @@ export function PeriodKeeper({ text }: { text: string }) {
   const [busyAction, setBusyAction] = i.useState('' as '' | 'toggle' | 'copy');
   const [error, setError] = i.useState('');
   const [notice, setNotice] = i.useState('');
-  const [collapsed, toggleCollapsed] = usePanelCollapsed('period-keeper');
   const api = (globalThis as any).blackObsidian;
   const available = typeof api?.getPeriodKeeperStatus === 'function';
   const latestText = i.useRef(text);
@@ -58,15 +55,14 @@ export function PeriodKeeper({ text }: { text: string }) {
   return (
     <section className="bos-period-keeper" aria-labelledby="bos-period-title">
       <div className="bos-period-bar">
-        <div className="bos-period-meta">
+        <div className="bos-period-meta" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span className={`bos-status-dot${state?.enabled ? ' is-online' : ''}`} />
-          <h4 id="bos-period-title">剪映标点保护</h4>
-          <span className="bos-period-pill" role="status">
-            {state ? periodKeeperStatusText(state) : available ? '检测剪映中…' : '桌面端可用'}
-          </span>
-          <small className="bos-period-sub">按原工具方式保护 , . 与 ...</small>
+          <h4 id="bos-period-title" style={{ margin: 0, fontSize: '13px', fontWeight: 700 }}>标点保护</h4>
+          <small className="bos-period-tip" style={{ color: 'var(--ui-muted)', fontSize: '11px' }}>
+            （按原工具方式保护，悬浮窗右上角 🛡️ 盾牌图标支持随时快速开关）
+          </small>
         </div>
-        <div className="bos-period-actions">
+        <div className="bos-period-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             type="button"
             role="switch"
@@ -75,9 +71,10 @@ export function PeriodKeeper({ text }: { text: string }) {
             aria-checked={!!state?.enabled}
             disabled={!available || !state || busy}
             onClick={() => perform('toggle', async () => { setState(await api.setPeriodKeeperEnabled(!state.enabled, 'compatible')); })}
+            style={{ minWidth: '72px' }}
           >
             {busyAction === 'toggle' && <span className="bos-btn-spinner" aria-hidden="true" />}
-            {busyAction === 'toggle' ? (state?.enabled ? '关闭中…' : '启动中…') : (state?.enabled ? '关闭保留' : '开启保留')}
+            {busyAction === 'toggle' ? (state?.enabled ? '关闭中…' : '开启中…') : (state?.enabled ? '已开启' : '已关闭')}
           </button>
           <button
             type="button"
@@ -88,19 +85,9 @@ export function PeriodKeeper({ text }: { text: string }) {
             {busyAction === 'copy' && <span className="bos-btn-spinner" aria-hidden="true" />}
             {busyAction === 'copy' ? '复制中…' : '复制到剪映'}
           </button>
-          <button
-            type="button"
-            className="bos-panel-toggle bos-icon-toggle"
-            aria-expanded={!collapsed}
-            aria-controls="bos-period-body"
-            title={collapsed ? '展开详情' : '收起详情'}
-            onClick={toggleCollapsed}
-          >
-            {collapsed ? '⌄' : '⌃'}
-          </button>
         </div>
       </div>
-      <div id="bos-period-body" hidden={collapsed}>
+      <div id="bos-period-body">
         {(error || state?.error || state?.clipboardError) && (
           <p className="bos-script-warning" role="alert">{error || state.error || state.clipboardError}</p>
         )}

@@ -62,6 +62,7 @@ replaceOnce('[Q,Y]=i.useState("openai")', '[Q,Y]=i.useState("gemini")');
 replaceOnce('Il=(y="openai")=>{Y(y),U(!0)}', 'Il=(y="gemini")=>{Y(y),U(!0)}');
 
 // 5. Workspaces & Navigation
+code = code.replace(',s.jsx("div",{className:"brand-kicker",children:"聚合多元模型 · 创作无限可能"})', '');
 replaceOnce('d==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T})', 'd==="workspace"&&s.jsx(z3,{models:Zl,onNavigate:T,providers:x,automation:bosAutomation})');
 replaceOnce('{id:"providers",label:"模型与连接",sub:"配置供应商与模型",Icon:Ec}', '{id:"providers",label:"接口与主题",sub:"API 配置 · 视觉主题",Icon:Ec}');
 replaceOnce('s.jsxs("div",{className:"sidebar-foot",children:[s.jsx("div",{className:"side-rule"}),s.jsx("p",{children:"多重协议 · 一站接入"}),s.jsxs("p",{className:"muted",children:["让全球的模型能力",s.jsx("br",{}),"为你的创意所用。"]}),s.jsxs("div",{className:"local-mode",children:[s.jsx("span",{className:"status-dot"})," 本机 API 代理"]})]})', 's.jsx(BOSMusicUpgrade.SidebarCredits,{})');

@@ -1535,6 +1535,174 @@ namespace XMStudioHost
         }
     }
 
+
+    internal sealed class ResizablePanelForm : Form
+    {
+        private const int WM_NCHITTEST = 0x84;
+        private const int HTCLIENT = 1;
+        private const int HTLEFT = 10;
+        private const int HTRIGHT = 11;
+        private const int HTTOP = 12;
+        private const int HTTOPLEFT = 13;
+        private const int HTTOPRIGHT = 14;
+        private const int HTBOTTOM = 15;
+        private const int HTBOTTOMLEFT = 16;
+        private const int HTBOTTOMRIGHT = 17;
+        private const int BORDER_GRIP = 8;
+
+        public ResizablePanelForm()
+        {
+            this.DoubleBuffered = true;
+            this.SetStyle(ControlStyles.ResizeRedraw, true);
+            this.MinimumSize = new Size(320, 300);
+        }
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_NCHITTEST)
+            {
+                base.WndProc(ref m);
+                int result = m.Result.ToInt32();
+                if (result == HTCLIENT)
+                {
+                    Point pt = PointToClient(new Point(m.LParam.ToInt32() & 0xFFFF, m.LParam.ToInt32() >> 16));
+                    bool left = pt.X <= BORDER_GRIP;
+                    bool right = pt.X >= ClientSize.Width - BORDER_GRIP;
+                    bool top = pt.Y <= BORDER_GRIP;
+                    bool bottom = pt.Y >= ClientSize.Height - BORDER_GRIP;
+
+                    if (top && left) { m.Result = (IntPtr)HTTOPLEFT; return; }
+                    if (top && right) { m.Result = (IntPtr)HTTOPRIGHT; return; }
+                    if (bottom && left) { m.Result = (IntPtr)HTBOTTOMLEFT; return; }
+                    if (bottom && right) { m.Result = (IntPtr)HTBOTTOMRIGHT; return; }
+                    if (left) { m.Result = (IntPtr)HTLEFT; return; }
+                    if (right) { m.Result = (IntPtr)HTRIGHT; return; }
+                    if (top) { m.Result = (IntPtr)HTTOP; return; }
+                    if (bottom) { m.Result = (IntPtr)HTBOTTOM; return; }
+                }
+                return;
+            }
+            base.WndProc(ref m);
+        }
+    }
+
+    internal static class ModernFolderPicker
+    {
+        [ComImport]
+        [Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+        public class FileOpenDialogRCW { }
+
+        [ComImport]
+        [Guid("d57c7288-d4ad-4768-be02-9d969532d960")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IFileOpenDialog
+        {
+            [PreserveSig] int Show([In] IntPtr parent);
+            void SetFileTypes([In] uint cFileTypes, [In] IntPtr rgFilterSpec);
+            void SetFileTypeIndex([In] uint iFileType);
+            void GetFileTypeIndex(out uint piFileType);
+            void Advise([In, MarshalAs(UnmanagedType.Interface)] IntPtr pfde, out uint pdwCookie);
+            void Unadvise([In] uint dwCookie);
+            void SetOptions([In] uint fos);
+            void GetOptions(out uint pfos);
+            void SetDefaultFolder([In, MarshalAs(UnmanagedType.Interface)] IShellItem psi);
+            void SetFolder([In, MarshalAs(UnmanagedType.Interface)] IShellItem psi);
+            void GetFolder([MarshalAs(UnmanagedType.Interface)] out IShellItem ppsi);
+            void GetCurrentSelection([MarshalAs(UnmanagedType.Interface)] out IShellItem ppsi);
+            void SetFileName([In, MarshalAs(UnmanagedType.LPWStr)] string pszName);
+            void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+            void SetTitle([In, MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+            void SetOkButtonLabel([In, MarshalAs(UnmanagedType.LPWStr)] string pszText);
+            void SetFileNameLabel([In, MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+            void GetResult([MarshalAs(UnmanagedType.Interface)] out IShellItem ppsi);
+            void AddPlace([In, MarshalAs(UnmanagedType.Interface)] IShellItem psi, int fdap);
+            void SetDefaultExtension([In, MarshalAs(UnmanagedType.LPWStr)] string pszDefaultExtension);
+            void Close([MarshalAs(UnmanagedType.Error)] int hr);
+            void SetClientGuid([In] ref Guid guid);
+            void ClearClientData();
+            void SetFilter([MarshalAs(UnmanagedType.Interface)] IntPtr pFilter);
+            void GetResults([MarshalAs(UnmanagedType.Interface)] out IntPtr ppenum);
+            void GetSelectedItems([MarshalAs(UnmanagedType.Interface)] out IntPtr ppsai);
+        }
+
+        [ComImport]
+        [Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE")]
+        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+        public interface IShellItem
+        {
+            void BindToHandler([In, MarshalAs(UnmanagedType.Interface)] IntPtr pbc, [In] ref Guid bhid, [In] ref Guid riid, out IntPtr ppv);
+            void GetParent([MarshalAs(UnmanagedType.Interface)] out IShellItem ppsi);
+            void GetDisplayName([In] uint sigdnName, [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+            void GetAttributes([In] uint sfgaoMask, out uint psfgaoAttribs);
+            void Compare([In, MarshalAs(UnmanagedType.Interface)] IShellItem psi, [In] uint hint, out int piOrder);
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+        private static extern int SHCreateItemFromParsingName(
+            [In, MarshalAs(UnmanagedType.LPWStr)] string pszPath,
+            [In] IntPtr pbc,
+            [In] ref Guid riid,
+            [Out] out IntPtr ppv);
+
+        private const uint FOS_PICKFOLDERS = 0x00000020;
+        private const uint FOS_FORCEFILESYSTEM = 0x00000040;
+        private const uint SIGDN_FILESYSPATH = 0x80058000;
+
+        public static string ShowDialog(IntPtr parentHwnd, string title, string initialFolder = null)
+        {
+            try
+            {
+                var dialog = (IFileOpenDialog)new FileOpenDialogRCW();
+                dialog.SetOptions(FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+                if (!string.IsNullOrEmpty(title)) dialog.SetTitle(title);
+                if (!string.IsNullOrEmpty(initialFolder) && Directory.Exists(initialFolder))
+                {
+                    try
+                    {
+                        IntPtr nativeShellItem;
+                        Guid riid = new Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE");
+                        if (SHCreateItemFromParsingName(initialFolder, IntPtr.Zero, ref riid, out nativeShellItem) == 0 && nativeShellItem != IntPtr.Zero)
+                        {
+                            var shellItem = (IShellItem)Marshal.GetObjectForIUnknown(nativeShellItem);
+                            dialog.SetFolder(shellItem);
+                            Marshal.Release(nativeShellItem);
+                        }
+                    }
+                    catch { }
+                }
+                int hr = dialog.Show(parentHwnd);
+                if (hr == 0)
+                {
+                    IShellItem item;
+                    dialog.GetResult(out item);
+                    if (item != null)
+                    {
+                        string path;
+                        item.GetDisplayName(SIGDN_FILESYSPATH, out path);
+                        return path ?? "";
+                    }
+                }
+                return "";
+            }
+            catch
+            {
+                using (var dlg = new FolderBrowserDialog { Description = title, ShowNewFolderButton = true })
+                {
+                    IWin32Window owner = parentHwnd != IntPtr.Zero ? new Win32WindowWrapper(parentHwnd) : null;
+                    if (dlg.ShowDialog(owner) == DialogResult.OK) return dlg.SelectedPath;
+                }
+                return "";
+            }
+        }
+
+        private class Win32WindowWrapper : IWin32Window
+        {
+            private readonly IntPtr _hwnd;
+            public Win32WindowWrapper(IntPtr hwnd) { _hwnd = hwnd; }
+            public IntPtr Handle { get { return _hwnd; } }
+        }
+    }
+
     internal sealed class StudioAppContext : ApplicationContext
     {
         public const string CurrentVersion = "1.6.9";
@@ -1680,6 +1848,26 @@ namespace XMStudioHost
                                 { "args", new Dictionary<string, object> { { "id", capId }, { "error", "" } } }
                             });
                         });
+                    }
+                    else if (evName == "scan-captured")
+                    {
+                        RestorePanelAfterScan();
+                    }
+                    else if (evName == "extract-progress")
+                    {
+                        int cur = ev.ContainsKey("current") ? Convert.ToInt32(ev["current"]) : 0;
+                        int tot = ev.ContainsKey("total") ? Convert.ToInt32(ev["total"]) : 0;
+                        int pct = ev.ContainsKey("percent") ? Convert.ToInt32(ev["percent"]) : 0;
+                        RunOnUi(() =>
+                        {
+                            if (_orbForm != null && !_orbForm.IsDisposed)
+                            {
+                                if (pct < 100) _orbForm.ShowProgress(string.Format("提取字幕 {0}% ({1}/{2})…", pct, cur, tot), Math.Max(4, pct));
+                                else _orbForm.FinishWorking(string.Format("字幕提取完成 ✨ (共 {0} 个草稿)", tot));
+                            }
+                        }, false);
+                        SendEventToMain("bos:jianying-extract-progress", ev);
+                        BroadcastCompanionState();
                     }
                     else if (evName == "scan-progress")
                     {
@@ -2721,7 +2909,7 @@ namespace XMStudioHost
                     var unused = HandleCompanionActionAsync("drop-choice", choice);
                 };
 
-                _panelForm = new Form
+                _panelForm = new ResizablePanelForm
                 {
                     Text = "悬浮窗 · 剪映自动化",
                     FormBorderStyle = FormBorderStyle.None,
@@ -2729,6 +2917,7 @@ namespace XMStudioHost
                     TopMost = true,
                     StartPosition = FormStartPosition.Manual,
                     Size = new Size(390, 420),
+                    Padding = new Padding(3),
                     BackColor = Color.FromArgb(16, 20, 26),
                     Icon = LoadAppIcon(),
                 };
@@ -2943,8 +3132,13 @@ namespace XMStudioHost
             if (action == "jy-wizard") { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "wizard" } }); return BroadcastCompanionState(); }
             if (action == "jy-scan")
             {
-                HidePanelForScan(false);
-                try { await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "scan" } }); }
+                var scanPayload = new Dictionary<string, object> { { "action", "scan" } };
+                var vDict = value as Dictionary<string, object>;
+                if (vDict != null && vDict.ContainsKey("modelKey"))
+                {
+                    scanPayload["args"] = new Dictionary<string, object> { { "modelKey", vDict["modelKey"] } };
+                }
+                try { await HandleJianyingActionAsync(scanPayload); }
                 catch { RestorePanelAfterScan(); throw; }
                 return BroadcastCompanionState();
             }
@@ -3174,6 +3368,43 @@ namespace XMStudioHost
             if (IsJianyingBusy()) { var unused = RefreshJianyingStatusAsync(); }
             else if (_panelHiddenForScan) RestorePanelAfterScan();
             if (!_companionVisible || _orbForm == null || _orbForm.IsDisposed) return;
+
+            if (_autoDock)
+            {
+                var jw = _lastJianyingState != null && _lastJianyingState.ContainsKey("jianyingWindow")
+                    ? _lastJianyingState["jianyingWindow"] as Dictionary<string, object>
+                    : null;
+                if (jw != null && jw.ContainsKey("found") && Convert.ToBoolean(jw["found"]) && !Convert.ToBoolean(jw["minimized"]))
+                {
+                    int jx = Convert.ToInt32(jw["x"]);
+                    int jy = Convert.ToInt32(jw["y"]);
+                    int jwW = Convert.ToInt32(jw["width"]);
+                    int jwH = Convert.ToInt32(jw["height"]);
+                    if (jwW > 300 && jwH > 200)
+                    {
+                        int targetX = jx + jwW - _orbForm.Width - 12;
+                        int targetY = jy + 12;
+                        var scr = Screen.FromPoint(new Point(targetX, targetY));
+                        targetX = Math.Max(scr.WorkingArea.Left, Math.Min(scr.WorkingArea.Right - _orbForm.Width, targetX));
+                        targetY = Math.Max(scr.WorkingArea.Top, Math.Min(scr.WorkingArea.Bottom - _orbForm.Height, targetY));
+                        if (Math.Abs(_orbForm.Left - targetX) > 2 || Math.Abs(_orbForm.Top - targetY) > 2)
+                        {
+                            RunOnUi(() =>
+                            {
+                                if (_orbForm != null && !_orbForm.IsDisposed)
+                                {
+                                    _orbForm.Location = new Point(targetX, targetY);
+                                    if (_panelOpen && _panelForm != null && _panelForm.Visible)
+                                    {
+                                        PlaceCompanionPanel();
+                                    }
+                                }
+                            }, false);
+                        }
+                    }
+                }
+            }
+
             BroadcastCompanionState();
         }
 
@@ -3448,15 +3679,13 @@ namespace XMStudioHost
             _tray.DoubleClick += (s, e) => { _mainForm.Show(); _mainForm.Activate(); };
         }
 
-        private string ChooseFolderDialog(string description)
+        private string ChooseFolderDialog(string description, string initialFolder = null)
         {
             string selected = "";
             _mainForm.Invoke(new Action(() =>
             {
-                using (var dlg = new FolderBrowserDialog { Description = description, ShowNewFolderButton = true })
-                {
-                    if (dlg.ShowDialog(_mainForm) == DialogResult.OK) selected = dlg.SelectedPath;
-                }
+                IntPtr owner = (_panelForm != null && _panelForm.Visible) ? _panelForm.Handle : _mainForm.Handle;
+                selected = ModernFolderPicker.ShowDialog(owner, description, initialFolder);
             }));
             return selected;
         }

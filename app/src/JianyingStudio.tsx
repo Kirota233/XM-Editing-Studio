@@ -222,7 +222,7 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
         <div className="bos-jy-handoff-badge">DESKTOP FLOATING SUITE · 独立置顶工作流</div>
         <h2>剪映自动化功能请使用桌面「悬浮窗」</h2>
         <p>
-          为避免遮挡剪映主界面，<strong>01 批量导出（坐标录制 / AI 识别截图）</strong>、<strong>02 字幕工程</strong>、<strong>03 批量改名</strong> 与 <strong>04 样片水印</strong> 已全部集成至桌面置顶「悬浮窗」与「月薪喵」中。把视频或文件夹直接拖到月薪喵身上即可一键改名或加水印！
+          为避免遮挡剪映主界面，<strong>01 批量导出（坐标录制 / AI 截图识别）</strong>、<strong>02 字幕工程</strong>、<strong>03 批量改名</strong> 与 <strong>04 样片水印</strong> 已全部集成至桌面置顶「悬浮窗」与「月薪喵」中。把视频或文件夹直接拖到月薪喵身上即可一键改名或加水印！
         </p>
         <div className="bos-jy-handoff-actions">
           <button
@@ -447,14 +447,30 @@ export function JianyingStudio({ active, providers, onNavigate }: { active: bool
           <label>
             <span>剪映草稿根目录</span>
             <div className="bos-jy-path">
-              <input readOnly value={state.draftDir || ''} placeholder="选择 Drafts 草稿根目录" />
+              <input
+                value={state.draftDir || ''}
+                placeholder="选择或粘贴 Drafts 草稿根目录"
+                onChange={(e: any) => {
+                  const val = e.target.value;
+                  setState((prev: any) => ({ ...prev, draftDir: val }));
+                  void api?.jianyingAction?.('paths', { draftDir: val });
+                }}
+              />
               <button type="button" disabled={locked} onClick={() => choosePath('draftDir')}>浏览</button>
             </div>
           </label>
           <label>
             <span>字幕导出目录</span>
             <div className="bos-jy-path">
-              <input readOnly value={state.subtitleOutput || ''} placeholder="选择字幕导出位置" />
+              <input
+                value={state.subtitleOutput || ''}
+                placeholder="选择或粘贴字幕导出位置（默认桌面）"
+                onChange={(e: any) => {
+                  const val = e.target.value;
+                  setState((prev: any) => ({ ...prev, subtitleOutput: val }));
+                  void api?.jianyingAction?.('paths', { subtitleOutput: val });
+                }}
+              />
               <button type="button" disabled={locked} onClick={() => choosePath('subtitleOutput')}>浏览</button>
             </div>
           </label>

@@ -272,6 +272,10 @@
         choiceActive = false;
         workingActive = true;
         switchGif('play', '努力加水印中 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { working: true, progress: wm.overallProgress || 4 });
+      } else if (jy.extractProgress && jy.extractProgress.percent < 100) {
+        choiceActive = false;
+        workingActive = true;
+        switchGif('play', '努力提取字幕中 ' + (jy.extractProgress.percent || 0) + '% (' + (jy.extractProgress.current || 0) + '/' + (jy.extractProgress.total || 0) + ')…', 0, { working: true, progress: jy.extractProgress.percent || 4 });
       } else if (workingActive) {
         workingActive = false;
         choiceActive = false;

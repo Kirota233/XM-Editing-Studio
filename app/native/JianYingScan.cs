@@ -37,6 +37,7 @@ internal sealed partial class JianYingEngine
     private Dictionary<string, object> _recordingProgress;
     private Dictionary<string, object> _exportProgress;
     private bool _webScan;
+    private string _scanModelKey;
 
     private void ScanProgress(string id, string stage, string message, int? count = null)
     {
@@ -178,11 +179,12 @@ internal sealed partial class JianYingEngine
             RequireJianyingForeground();
             int[] resolution = GetScreenResolution();
             string image = CaptureScreenJpegBase64();
+            Send(new Dictionary<string, object> { { "event", "scan-captured" } });
             ScanProgress(id, "locating", "AI 正在定位草稿标题下方的项目区域");
             DraftScope scope;
             try
             {
-                scope = ParseScope(RequestAiText(LocatePrompt, image, generation), resolution[0], resolution[1]);
+                scope = ParseScope(RequestAiText(LocatePrompt, image, generation, _scanModelKey), resolution[0], resolution[1]);
             }
             catch (OperationCanceledException) { throw; }
             catch (Exception locateError)
@@ -199,7 +201,7 @@ internal sealed partial class JianYingEngine
             for (int attempt = 0; attempt < 2; attempt++)
             {
                 CheckInterrupted(generation);
-                string answer = scope.HeadingCount == 0 ? "{\"visibleCount\":0,\"drafts\":[]}" : RequestAiText(prompt, crop, generation);
+                string answer = scope.HeadingCount == 0 ? "{\"visibleCount\":0,\"drafts\":[]}" : RequestAiText(prompt, crop, generation, _scanModelKey);
                 ScanProgress(id, "organizing", "正在整理草稿名称与位置");
                 try { drafts = ParseCards(answer, scope); break; }
                 catch (Exception error)
@@ -228,7 +230,7 @@ internal sealed partial class JianYingEngine
             ScanProgress(id, cancelled ? "cancelled" : "error", message);
             Log(message);
         }
-        finally { _scanCapture = null; _webScan = false; }
+        finally { _scanCapture = null; _webScan = false; _scanModelKey = null; }
     }
     private void ValidateDraftQueue()
     {

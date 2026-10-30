@@ -294,6 +294,10 @@ function orbHtml() {
         choiceActive = false;
         workingActive = true;
         switchGif('play', '努力加水印中 ' + (wm.overallProgress || 0) + '% (' + (wm.completedCount || 0) + '/' + (wm.totalCount || 0) + ')…', 0, { working: true, progress: wm.overallProgress || 4 });
+      } else if (jy.extractProgress && jy.extractProgress.percent < 100) {
+        choiceActive = false;
+        workingActive = true;
+        switchGif('play', '努力提取字幕中 ' + (jy.extractProgress.percent || 0) + '% (' + (jy.extractProgress.current || 0) + '/' + (jy.extractProgress.total || 0) + ')…', 0, { working: true, progress: jy.extractProgress.percent || 4 });
       } else if (workingActive) {
         workingActive = false;
         choiceActive = false;
@@ -376,7 +380,9 @@ function panelHtml(acrylic) {
   .path-row { display: flex; align-items: center; gap: 5px; }
   .path-row .input { flex: 1; min-width: 0; }
 
-  .table-wrap { max-height: 145px; overflow-y: auto; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.24); }
+  .table-wrap { max-height: 150px; overflow-y: auto; overscroll-behavior: contain; border-radius: 9px; border: 1px solid rgba(255,255,255,.1); background: rgba(0,0,0,.24); }
+  .table-wrap::-webkit-scrollbar { width: 4px; }
+  .table-wrap::-webkit-scrollbar-thumb { background: rgba(255,255,255,.24); border-radius: 4px; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
   th, td { padding: 6px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,.07); }
   th { position: sticky; top: 0; background: rgba(18,22,28,.95); color: #9aa5b4; font-size: 10px; }
@@ -458,17 +464,16 @@ function panelHtml(acrylic) {
       <div class="log" id="jyGuideBox">打开剪映首页后，可录制坐标或 AI 扫描草稿列表。</div>
       <div class="grid-3">
         <button class="btn" id="jyWizard">🎯 录制坐标</button>
-        <button class="btn" id="jyScan">📸 识别截图</button>
+        <button class="btn" id="jyScan">📸 截图识别</button>
         <button class="btn primary" id="jyExport">🚀 批量导出</button>
       </div>
-      <button class="btn" id="jyToggleParams" style="padding:4px 8px;font-size:10px">⚙️ 参数设置</button>
 
-      <div id="jyPostScanArea" hidden style="display:flex;flex-direction:column;gap:8px">
+      <div id="jyPostScanArea" style="display:flex;flex-direction:column;gap:8px">
       <div class="table-wrap">
         <table>
           <thead><tr><th style="width:42px">起点</th><th>草稿名称</th><th style="width:64px">状态</th></tr></thead>
           <tbody id="jyQueueBody">
-            <tr><td colspan="3" class="empty-tip">点击「📸 识别截图」AI 扫描剪映首页草稿</td></tr>
+            <tr><td colspan="3" class="empty-tip">点击「📸 截图识别」AI 扫描剪映首页草稿</td></tr>
           </tbody>
         </table>
       </div>
@@ -522,14 +527,14 @@ function panelHtml(acrylic) {
       <div class="field">
         <span>剪映草稿根目录 (JianyingPro Drafts)</span>
         <div class="path-row">
-          <input class="input" id="jyDraftDir" readonly placeholder="选择剪映 Drafts 草稿根目录（自动记忆）" />
+          <input class="input" id="jyDraftDir" placeholder="选择或粘贴剪映 Drafts 草稿根目录（自动记忆）" />
           <button class="btn" id="jyPickDraftDir">浏览</button>
         </div>
       </div>
       <div class="field">
         <span>SRT 字幕导出目录</span>
         <div class="path-row">
-          <input class="input" id="jySubOut" readonly placeholder="选择字幕导出文件夹（自动记忆）" />
+          <input class="input" id="jySubOut" placeholder="选择或粘贴字幕导出文件夹（默认桌面）" />
           <button class="btn" id="jyPickSubOut">浏览</button>
         </div>
       </div>
@@ -757,13 +762,10 @@ function panelHtml(acrylic) {
       }
 
       const queue = Array.isArray(jy.queue) ? jy.queue : [];
-      // 草稿列表与参数区默认折叠：识别出草稿或手动点「参数设置」后才展开，节省悬浮窗高度。
-      $('jyPostScanArea').hidden = !(queue.length > 0 || showJyParams);
-      $('jyToggleParams').textContent = showJyParams ? '⚙️ 收起参数' : '⚙️ 参数设置';
       if (selectedDraftIdx >= queue.length) selectedDraftIdx = 0;
       const qBody = $('jyQueueBody');
       if (!queue.length) {
-        qBody.innerHTML = '<tr><td colspan="3" class="empty-tip">点击「📸 识别截图」AI 扫描剪映首页草稿</td></tr>';
+        qBody.innerHTML = '<tr><td colspan="3" class="empty-tip">点击「📸 截图识别」AI 扫描剪映首页草稿</td></tr>';
       } else {
         qBody.innerHTML = '';
         queue.forEach((item, idx) => {
@@ -774,6 +776,12 @@ function panelHtml(acrylic) {
             String(item.name || '').replace(/</g, '&lt;') + '</td><td>' + String(item.st || '待导出') + '</td>';
           qBody.appendChild(tr);
         });
+      }
+
+      if (jy.extractProgress && jy.extractProgress.percent < 100) {
+        $('jyExtract').textContent = '提取中 ' + jy.extractProgress.percent + '% (' + jy.extractProgress.current + '/' + jy.extractProgress.total + ')…';
+      } else if (!$('jyExtract').querySelector('.btn-spin')) {
+        $('jyExtract').textContent = '提取字幕并隐藏轨道';
       }
 
       if (jy.mode && document.activeElement !== $('jyModeSelect')) $('jyModeSelect').value = jy.mode;
@@ -859,7 +867,6 @@ function panelHtml(acrylic) {
     $('jyScan').onclick = () => act('jy-scan', { modelKey: $('jyModelSelect').value }, $('jyScan'), '识别中…');
     $('jyExport').onclick = () => act('jy-export', { index: selectedDraftIdx }, $('jyExport'), '启动导出…');
     $('jyStop').onclick = () => act('jy-stop');
-    $('jyToggleParams').onclick = () => { showJyParams = !showJyParams; render(state); };
     $('jyModeSelect').onchange = e => act('jy-settings', { mode: e.target.value });
     $('jyTplSelect').onchange = e => e.target.value && act('jy-select-tpl', { id: e.target.value });
     ['open_draft', 'export', 'confirm', 'popup_close', 'close_btn', 'draft_close'].forEach(k => {
@@ -873,6 +880,27 @@ function panelHtml(acrylic) {
       waitsDirty = false;
       act('jy-settings', { waits }, $('jySaveWaits'), '保存中…');
     };
+
+    const tableWrap = document.querySelector('#stageExport .table-wrap');
+    if (tableWrap) {
+      tableWrap.addEventListener('wheel', e => {
+        e.stopPropagation();
+      }, { passive: false });
+    }
+
+    let pathTimer = null;
+    const syncPaths = () => {
+      clearTimeout(pathTimer);
+      pathTimer = setTimeout(() => {
+        const dDir = $('jyDraftDir')?.value?.trim() || '';
+        const sOut = $('jySubOut')?.value?.trim() || '';
+        try { if (dDir) localStorage.setItem('xm.jianying.draftDir', dDir); } catch {}
+        try { if (sOut) localStorage.setItem('xm.jianying.subtitleOutput', sOut); } catch {}
+        act('jy-paths', { draftDir: dDir, subtitleOutput: sOut });
+      }, 400);
+    };
+    if ($('jyDraftDir')) { $('jyDraftDir').oninput = syncPaths; $('jyDraftDir').onchange = syncPaths; }
+    if ($('jySubOut')) { $('jySubOut').oninput = syncPaths; $('jySubOut').onchange = syncPaths; }
 
     $('jyPickDraftDir').onclick = async () => {
       const res = await act('jy-pick-path', 'draftDir', $('jyPickDraftDir'), '选择中…');
