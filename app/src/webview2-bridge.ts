@@ -75,25 +75,36 @@ if (wv && !window.blackObsidian) {
 
   // Jianying AI Vision bridge when JianYingEngine.exe requests draft scan / AI rename
   let lastJyConnection: any = null;
-  function resolveJyConnection() {
-    if (lastJyConnection?.provider?.apiKey) return lastJyConnection;
+  function resolveJyConnection(reqModelKey?: string) {
     try {
-      const cached = JSON.parse(localStorage.getItem('xm.providers.cache') || '[]');
-      const savedKey = localStorage.getItem('xm.jianying.model') || '';
+      const cached = JSON.parse(
+        localStorage.getItem('xm.providers.cache') ||
+        localStorage.getItem('black-obsidian.providers.v1') ||
+        '[]'
+      );
+      const savedKey = reqModelKey || localStorage.getItem('xm.jianying.model') || '';
       const models: any[] = [];
       for (const p of cached) {
         for (const m of p?.models || []) {
-          if (isGeminiModel(p, m)) models.push({ key: `${p.id}::${m}`, provider: p, model: m });
+          if (p?.protocol === 'gemini' || isGeminiModel(p, m) || /gemini/i.test(m)) {
+            models.push({ key: `${p.id}::${m}`, provider: p, model: m });
+          }
         }
       }
-      return models.find(item => item.key === savedKey) || models[0] || null;
+      const matched = (savedKey ? models.find(item => item.key === savedKey) : null) || models[0] || null;
+      if (matched?.provider?.apiKey) {
+        lastJyConnection = matched;
+        return matched;
+      }
+      if (lastJyConnection?.provider?.apiKey) return lastJyConnection;
+      return null;
     } catch {
       return lastJyConnection;
     }
   }
   async function handleJianyingAiFromHost(req: any) {
     try {
-      const conn = resolveJyConnection();
+      const conn = resolveJyConnection(req?.modelKey);
       if (!conn) throw new Error('请先在主窗口「接口与主题」中配置 Gemini 模型连接');
       const built = buildJianyingAIRequest(conn, { prompt: req.prompt, image: req.image });
       const resp = await hostFetch(built.url.toString(), {
@@ -108,6 +119,9 @@ if (wv && !window.blackObsidian) {
         conn.provider?.protocol === 'gemini'
           ? (parsed?.candidates?.[0]?.content?.parts || []).map((p: any) => p.text || '').join('')
           : parsed?.choices?.[0]?.message?.content || '';
+      if (!text || !text.trim()) {
+        throw new Error('AI 返回内容为空，请检查模型连接');
+      }
       await invokeHost('jianying-ai-reply', { id: req.id, token: req.token, text: String(text || '[]') });
     } catch (err: any) {
       await invokeHost('jianying-ai-reply', { id: req.id, token: req.token, error: err?.message || 'AI 识别失败' });

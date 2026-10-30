@@ -170,6 +170,42 @@ test('C# JianYingEngine native binary responds to status, settings, regex previe
     assert.equal(renamed.plan.length, 0);
     assert.equal(await fs.readFile(path.join(mediaDir, '测试短剧_第1集.mp4'), 'utf8'), 'video-1');
     assert.equal(await fs.readFile(path.join(mediaDir, '测试短剧_第2集.mp4'), 'utf8'), 'video-2');
+
+    // Test AI smart rename with missing extensions in model output and markdown code fences
+    const aiMediaDir = path.join(root, 'ai_videos');
+    await fs.mkdir(aiMediaDir, { recursive: true });
+    await fs.writeFile(path.join(aiMediaDir, '圣诞老爸16.mp4'), 'ai-video-1');
+    await fs.writeFile(path.join(aiMediaDir, '圣诞老爸28下(1).mp4'), 'ai-video-2');
+
+    const mockAiConn = {
+      provider: { protocol: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com/v1beta', apiKey: 'test-key' },
+      model: 'gemini-2.5-flash',
+    };
+    const aiHost = createJianyingHost({
+      appDirectory: path.resolve('app'),
+      dataDirectory: path.join(root, 'ai-host-data'),
+      requestAI: async () => '```json\n[\n  {"old": "圣诞老爸16", "new": "圣诞老爸1上"},\n  {"old": "圣诞老爸28下(1).mp4", "new": "圣诞老爸1下"}\n]\n```',
+    });
+    try {
+      await aiHost.run('preview', { folder: aiMediaDir, template: '圣诞老爸1上', ai: true }, mockAiConn);
+      let aiState = await aiHost.run('status', {});
+      for (let i = 0; i < 50 && aiState.busy; i++) {
+        await new Promise(r => setTimeout(r, 100));
+        aiState = await aiHost.run('status', {});
+      }
+      assert.equal(aiState.busy, false);
+      assert.equal(aiState.plan.length, 2);
+      assert.equal(aiState.plan[0].new_name, '圣诞老爸1上.mp4');
+      assert.equal(aiState.plan[1].new_name, '圣诞老爸1下.mp4');
+      assert.equal(aiState.plan[0].mode, 'AI重命名');
+
+      const aiRenamed = await aiHost.run('rename', {});
+      assert.equal(aiRenamed.plan.length, 0);
+      assert.equal(await fs.readFile(path.join(aiMediaDir, '圣诞老爸1上.mp4'), 'utf8'), 'ai-video-1');
+      assert.equal(await fs.readFile(path.join(aiMediaDir, '圣诞老爸1下.mp4'), 'utf8'), 'ai-video-2');
+    } finally {
+      await aiHost.dispose();
+    }
   } finally {
     await host.dispose();
     await fs.rm(root, { recursive: true, force: true });

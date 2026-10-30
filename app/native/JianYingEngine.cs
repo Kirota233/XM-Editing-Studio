@@ -943,7 +943,7 @@ internal sealed partial class JianYingEngine
         }
     }
 
-    private string RequestAiText(string prompt, string base64Image, int gen)
+    private string RequestAiText(string prompt, string base64Image, int gen, string modelKey = null)
     {
         string token = Guid.NewGuid().ToString("N");
         var slot = new AiRequestSlot();
@@ -951,13 +951,18 @@ internal sealed partial class JianYingEngine
         {
             _aiRequests[token] = slot;
         }
-        Send(new Dictionary<string, object>
+        var payload = new Dictionary<string, object>
         {
             { "event", "ai" },
             { "token", token },
             { "prompt", prompt },
             { "image", base64Image }
-        });
+        };
+        if (!string.IsNullOrEmpty(modelKey))
+        {
+            payload["modelKey"] = modelKey;
+        }
+        Send(payload);
         try
         {
             Stopwatch sw = Stopwatch.StartNew();
@@ -1255,34 +1260,79 @@ internal sealed partial class JianYingEngine
     {
         if (data == null || data.Count > 2000) throw new InvalidOperationException("AI 改名方案无效。");
         var mapping = new Dictionary<string, string>(StringComparer.Ordinal);
+        var stemMapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (string f in _selectedFiles)
         {
             string baseName = Path.GetFileName(f);
             if (mapping.ContainsKey(baseName)) throw new InvalidOperationException("所选文件含同名文件，请分文件夹处理。");
             mapping[baseName] = f;
+            string stem = Path.GetFileNameWithoutExtension(f);
+            if (!stemMapping.ContainsKey(stem)) stemMapping[stem] = f;
         }
         var plan = new List<Dictionary<string, object>>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seenSources = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targetNamesSeen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (object itemObj in data)
         {
             var item = itemObj as IDictionary;
             if (item == null) throw new InvalidOperationException("AI 改名方案无效。");
             string oldName = item.Contains("old") ? Convert.ToString(item["old"]) : "";
             string newName = item.Contains("new") ? Convert.ToString(item["new"]) : "";
-            if (string.IsNullOrEmpty(oldName) || !mapping.ContainsKey(oldName) || !seen.Add(oldName) || !ValidFilename(newName))
+            if (string.IsNullOrEmpty(oldName) || string.IsNullOrEmpty(newName))
             {
                 throw new InvalidOperationException("AI 返回未知、重复或不合法文件名。");
             }
-            string source = mapping[oldName];
-            if (!string.Equals(Path.GetExtension(source), Path.GetExtension(newName), StringComparison.OrdinalIgnoreCase))
+
+            string source = null;
+            if (mapping.ContainsKey(oldName))
             {
-                throw new InvalidOperationException("改名不能改变文件扩展名。");
+                source = mapping[oldName];
             }
+            else
+            {
+                string oldStem = Path.GetFileNameWithoutExtension(oldName);
+                if (stemMapping.ContainsKey(oldStem))
+                {
+                    source = stemMapping[oldStem];
+                }
+                else if (stemMapping.ContainsKey(oldName))
+                {
+                    source = stemMapping[oldName];
+                }
+            }
+            if (source == null || !seenSources.Add(source))
+            {
+                throw new InvalidOperationException("AI 返回未知或重复的原文件名：" + oldName);
+            }
+
+            // 自动保留源文件扩展名，防止大模型未输出扩展名导致报错
+            string ext = Path.GetExtension(source);
+            string newStem = Path.GetFileNameWithoutExtension(newName);
+            if (string.IsNullOrEmpty(newStem)) newStem = newName;
+            newName = newStem + ext;
+
+            if (!ValidFilename(newName))
+            {
+                throw new InvalidOperationException("AI 生成的文件名不合法：" + newName);
+            }
+
+            // 避免目标文件名重复
+            string baseTargetName = Path.GetFileNameWithoutExtension(newName);
+            string targetCandidate = newName;
+            int counter = 2;
+            while (targetNamesSeen.Contains(Path.Combine(Path.GetDirectoryName(source), targetCandidate).ToLowerInvariant()))
+            {
+                targetCandidate = string.Format("{0}_{1}{2}", baseTargetName, counter++, ext);
+            }
+            newName = targetCandidate;
+            string targetPath = Path.Combine(Path.GetDirectoryName(source), newName);
+            targetNamesSeen.Add(targetPath.ToLowerInvariant());
+
             plan.Add(new Dictionary<string, object>
             {
                 { "source", source },
-                { "target", Path.Combine(Path.GetDirectoryName(source), newName) },
-                { "old_name", oldName },
+                { "target", targetPath },
+                { "old_name", Path.GetFileName(source) },
                 { "new_name", newName },
                 { "mode", "AI重命名" }
             });
@@ -1817,6 +1867,7 @@ internal sealed partial class JianYingEngine
                     string folder = args.Contains("folder") ? Convert.ToString(args["folder"]) ?? "" : "";
                     string template = args.Contains("template") ? Convert.ToString(args["template"]) ?? "" : "";
                     bool ai = args.Contains("ai") && Convert.ToBoolean(args["ai"]);
+                    string modelKey = args.Contains("modelKey") ? Convert.ToString(args["modelKey"]) ?? "" : "";
                     if (string.IsNullOrEmpty(template) || template.Length > 500)
                     {
                         throw new InvalidOperationException("请输入最多 500 字符的命名模板。");
@@ -1836,10 +1887,29 @@ internal sealed partial class JianYingEngine
                         BeginOperation(gen =>
                         {
                             var fns = _selectedFiles.Select(Path.GetFileName).ToList();
-                            string prompt = string.Format("Rename these files to: {0}\nFiles: {1}\nReturn ONLY raw JSON array with 'old' and 'new' keys.", template, _json.Serialize(fns));
-                            string resp = RequestAiText(prompt, null, gen);
-                            string cleaned = Regex.Replace(resp.Trim(), @"^```(?:json)?\s*|\s*```$", "", RegexOptions.Singleline);
-                            var arr = _json.DeserializeObject(cleaned) as IList;
+                            string prompt = string.Format(
+                                "你是一个视频文件重命名助手。请根据命名规则/模板将下列文件重命名。\n" +
+                                "命名规则/模板：{0}\n" +
+                                "待重命名文件列表：{1}\n" +
+                                "注意：\n" +
+                                "1. 必须保留每个文件原有的扩展名（如 .mp4）；\n" +
+                                "2. 必须为每个待重命名文件生成对应项，且新文件名不能相互重复；\n" +
+                                "3. 严格只输出纯 JSON 数组，不要包含任何问候、解释或额外文字；\n" +
+                                "4. 格式示例：[{{\"old\":\"原文件名.mp4\",\"new\":\"新文件名.mp4\"}}]",
+                                template, _json.Serialize(fns));
+                            string resp = RequestAiText(prompt, null, gen, modelKey);
+                            if (string.IsNullOrWhiteSpace(resp))
+                            {
+                                throw new InvalidOperationException("AI 未返回重命名结果，请重试。");
+                            }
+                            Match m = Regex.Match(resp, @"\[\s*\{.*\}\s*\]", RegexOptions.Singleline);
+                            string jsonStr = m.Success ? m.Value : resp.Trim();
+                            jsonStr = Regex.Replace(jsonStr, @"^```(?:json)?\s*|\s*```$", "", RegexOptions.Singleline).Trim();
+                            var arr = _json.DeserializeObject(jsonStr) as IList;
+                            if (arr == null || arr.Count == 0)
+                            {
+                                throw new InvalidOperationException("AI 返回格式无法解析为列表：" + (resp.Length > 80 ? resp.Substring(0, 80) + "..." : resp));
+                            }
                             FillAiRename(arr);
                         });
                     }

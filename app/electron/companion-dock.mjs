@@ -608,7 +608,7 @@ function panelHtml(acrylic) {
   <script>
     const api = window.blackObsidian, $ = id => document.getElementById(id);
     let state = null, toastTimer = 0, currentStage = localStorage.getItem('xm.jianying.stage') || 'export';
-    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false, lastForceStageToken = '', showJyParams = false;
+    let selectedDraftIdx = 0, aiRenameMode = false, renameFolder = '', waitsDirty = false, lastForceStageToken = '', showJyParams = false, lastJyNotice = '';
 
     const toast = msg => {
       const t = $('toast');
@@ -626,6 +626,10 @@ function panelHtml(acrylic) {
     function switchStage(stage, notifyCat = false) {
       if (!['export', 'subtitles', 'rename', 'watermark'].includes(stage)) stage = 'export';
       currentStage = stage;
+      loadCachedModels();
+      if (stage === 'rename' && $('jyPreviewRename')) {
+        $('jyPreviewRename').textContent = aiRenameMode ? '生成 AI 预览' : '生成改名预览';
+      }
       try { localStorage.setItem('xm.jianying.stage', stage); } catch {}
       document.querySelectorAll('.stage-tab').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.stage === stage);
@@ -650,7 +654,11 @@ function panelHtml(acrylic) {
 
     function loadCachedModels() {
       try {
-        const cached = JSON.parse(localStorage.getItem('xm.providers.cache') || '[]');
+        const cached = JSON.parse(
+          localStorage.getItem('xm.providers.cache') ||
+          localStorage.getItem('black-obsidian.providers.v1') ||
+          '[]'
+        );
         const savedKey = localStorage.getItem('xm.jianying.model') || '';
         const sel = $('jyModelSelect');
         const opts = [];
@@ -726,6 +734,10 @@ function panelHtml(acrylic) {
         $('petThemeBtn').title = isFish ? '当前：大肥鱼（点击切换回月薪喵）' : '当前：月薪喵（点击切换大肥鱼主题）';
       }
       const jy = s.jianying || {}, wm = s.watermark || {};
+      if (jy.notice && jy.notice !== lastJyNotice) {
+        lastJyNotice = jy.notice;
+        toast(jy.notice);
+      }
       $('dockBtn').className = 'icon' + (s.autoDock ? ' on' : '');
       $('pkSwitch').className = 'icon' + (s.periodEnabled ? ' on' : '');
       $('dockLabel').textContent = (s.jianyingFound ? (s.autoDock ? '✓ 已吸附剪映' : '已检测到剪映') : '桌面置顶') + (s.periodEnabled ? ' · 句号守护中' : '');
@@ -882,11 +894,13 @@ function panelHtml(acrylic) {
       aiRenameMode = false;
       $('renameModeTpl').classList.add('active');
       $('renameModeAi').classList.remove('active');
+      $('jyPreviewRename').textContent = '生成改名预览';
     };
     $('renameModeAi').onclick = () => {
       aiRenameMode = true;
       $('renameModeAi').classList.add('active');
       $('renameModeTpl').classList.remove('active');
+      $('jyPreviewRename').textContent = '生成 AI 预览';
     };
     $('jyPickRenameDir').onclick = async () => {
       const res = await act('jy-pick-rename-dir', null, $('jyPickRenameDir'), '选择中…');
@@ -899,7 +913,7 @@ function panelHtml(acrylic) {
       template: $('renameTemplate').value.trim() || '短剧名称_第1集',
       ai: aiRenameMode,
       modelKey: $('jyModelSelect').value
-    }, $('jyPreviewRename'), '生成中…');
+    }, $('jyPreviewRename'), aiRenameMode ? 'AI 生成中…' : '生成中…');
     $('jyExecuteRename').onclick = () => act('jy-execute-rename', null, $('jyExecuteRename'), '改名中…');
 
     ['renameDropZone', 'wmDropZone'].forEach(id => {

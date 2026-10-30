@@ -1537,7 +1537,7 @@ namespace XMStudioHost
 
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.8";
+        public const string CurrentVersion = "1.6.9";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
@@ -3058,7 +3058,18 @@ namespace XMStudioHost
             if (action == "jy-preview-rename")
             {
                 var args = value is Dictionary<string, object> ? (Dictionary<string, object>)value : new Dictionary<string, object>();
+                bool isAi = args.ContainsKey("ai") && Convert.ToBoolean(args["ai"]);
                 await HandleJianyingActionAsync(new Dictionary<string, object> { { "action", "preview" }, { "args", args } });
+                if (isAi)
+                {
+                    var sw = Stopwatch.StartNew();
+                    await Task.Delay(300);
+                    while (IsJianyingBusy() && sw.ElapsedMilliseconds < 35000)
+                    {
+                        await Task.Delay(250);
+                        await RefreshJianyingStatusAsync();
+                    }
+                }
                 return BroadcastCompanionState();
             }
             if (action == "jy-execute-rename")
