@@ -1537,7 +1537,7 @@ namespace XMStudioHost
 
     internal sealed class StudioAppContext : ApplicationContext
     {
-        public const string CurrentVersion = "1.6.6";
+        public const string CurrentVersion = "1.6.7";
         public const int AppPort = 37651;
         private readonly string _baseDir;
         private readonly string _userDataDir;
